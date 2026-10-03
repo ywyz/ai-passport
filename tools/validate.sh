@@ -66,6 +66,15 @@ run_static_checks() {
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_verify_firmware.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_archive_firmware.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_install_passport_skills.py
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain/passport -Imain \
+        main/passport/passport_json.c main/passport/passport_json_decodeutf8.c \
+        main/passport/passport_sha256.c main/passport/passport_pack.c \
+        main/passport/passport_keys.c main/passport/passport_events.c \
+        tests/test_passport_units.c -o "${test_dir}/test_passport_units"
+    "${test_dir}/test_passport_units"
+    echo "Companion server tests (D1a):"
+    ( cd companion/passport-server && \
+      PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests )
     rm -rf "${test_dir}"
     echo "Host tests: PASS"
 }
