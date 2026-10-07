@@ -13,7 +13,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "fonts/suite_fonts.h"
+
 #include <stdio.h>
+#include <string.h>
 
 static const char *TAG = "suite_pages";
 
@@ -118,7 +121,7 @@ static void on_status_action(suite_action_t act)
 lv_obj_t *suite_ui_battery_create(lv_obj_t *parent)
 {
     lv_obj_t *label = lv_label_create(parent);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(label, &suite_font_16, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(C_DIM), 0);
     lv_obj_align(label, LV_ALIGN_TOP_RIGHT, -12, 10);
     suite_ui_battery_update(label);
@@ -128,11 +131,17 @@ lv_obj_t *suite_ui_battery_create(lv_obj_t *parent)
 void suite_ui_battery_update(lv_obj_t *label)
 {
     int soc = bsp_battery_soc();
+    char buf[24];
     if (soc < 0) {
-        lv_label_set_text(label, "BAT --");
+        strlcpy(buf, "电量 --", sizeof(buf));
     } else {
-        lv_label_set_text_fmt(label, "BAT %d%%", soc);
+        if (soc > 100) {
+            soc = 100;  // 限幅既符合语义,也让编译器确认无格式截断
+        }
+        snprintf(buf, sizeof(buf), "电量 %d%%", soc);
     }
+    if (strcmp(buf, lv_label_get_text(label)) == 0) return;  // 文本未变不重绘
+    lv_label_set_text(label, buf);
 }
 
 static lv_obj_t *info_row(lv_obj_t *parent, const char *title, int y,
