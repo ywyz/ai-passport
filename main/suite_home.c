@@ -1,6 +1,8 @@
-// main/suite_home.c —— 首页:三体场景(3 颗太阳/星空/地平线) + 时钟 + 天气行。
-// 场景数学在 suite_scene.c(纯逻辑,10 FPS 上限);本文件只做渲染与快照刷新。
-// 时间不可信时时钟显示 "--:--" 并给出状态提示,不伪装可用(计划第 7 节)。
+// main/suite_home.c —— 首页:霓虹三体星轨 + 时钟 + 日期 + 天气行。
+// 视觉参考"三体星轨"效果图:纯黑底、发光太阳(双层光晕+白热核心)、
+// 离散粒子拖尾、彩色星点、居中标题。场景数学在 suite_scene.c(纯逻辑,
+// 10 FPS 上限);本文件只做渲染与快照刷新。时间不可信时时钟显示 "--:--"
+// 并给出状态提示,不伪装可用(计划第 7 节)。
 #include "suite_home.h"
 
 #include "suite_clock.h"
@@ -20,22 +22,45 @@
 #include <stdio.h>
 #include <string.h>
 
-// ---- 主题(与 suite_pages.c 保持一致) ----
-#define C_BG 0x070B14      // 夜空深底
-#define C_INK 0xE8EEF7     // 主文字
-#define C_DIM 0x8CA0B8     // 次文字
-#define C_WARN 0xE0B454    // 警示
-#define C_STAR 0x5A6B85    // 星点
-#define C_HORIZON 0x22304A // 地平线
+// ---- 主题 ----
+#define C_BG 0x000105    // 纯黑夜空
+#define C_INK 0xEAF4FF   // 主文字(冷白)
+#define C_DIM 0x7E8CA6   // 次文字
+#define C_WARN 0xE0B454  // 警示
+#define C_TITLE 0xE6EDF8 // 标题
 
 #define SCENE_CX 120       // 场景中心(屏宽 240)
-#define SCENE_CY 118
-#define SCENE_SCALE 100.0f // 归一化坐标 → 像素比例
+#define SCENE_CY 140
+#define SCENE_SCALE 88.0f  // 归一化坐标 → 像素比例
 
-#define STAR_COUNT 18
+#define STAR_COUNT 22
+#define TRAIL_SLOTS 14        // 每太阳拖尾点数
+#define TRAIL_SAMPLE_EVERY 2  // 每 2 tick 采样一次历史位置
+
+// 白热化核心色(太阳色向白混合);光晕与拖尾用太阳本色。
+static const uint32_t k_core_colors[SUITE_SCENE_SUNS] = {
+    0xFFAD9E,  // 焰橙核心
+    0x9AF0FF,  // 电青核心
+    0xE4AAFF,  // 幻紫核心
+};
+static const uint32_t k_star_colors[] = {
+    0x8A7BD8,  // 紫
+    0x5AD8E8,  // 青
+    0xFF8A66,  // 橙
+    0xC9D6EE,  // 冷白
+};
+
+typedef struct {
+    float x, y;
+} trail_pt_t;
 
 static lv_obj_t *s_scr;
+static lv_obj_t *s_glow_in[SUITE_SCENE_SUNS];
+static lv_obj_t *s_glow_out[SUITE_SCENE_SUNS];
 static lv_obj_t *s_suns[SUITE_SCENE_SUNS];
+static lv_obj_t *s_trail[SUITE_SCENE_SUNS][TRAIL_SLOTS];
+static trail_pt_t s_hist[SUITE_SCENE_SUNS][TRAIL_SLOTS];  // 环形历史缓冲
+static int s_head;
 static lv_obj_t *s_clock_lbl;
 static lv_obj_t *s_date_lbl;
 static lv_obj_t *s_wx_lbl;
@@ -65,52 +90,125 @@ static const char *wx_group_text(suite_wx_group_t g)
     }
 }
 
-// 归一化太阳位置 → 屏幕坐标(半径下限 3 px 防不可见)。
-static void scene_render(void)
+// 通用圆点(星点/拖尾/光晕/太阳共用)。
+static lv_obj_t *dot_create(lv_obj_t *parent, lv_coord_t size, lv_coord_t cx,
+                            lv_coord_t cy, uint32_t color, lv_opa_t opa)
 {
-    for (int i = 0; i < SUITE_SCENE_SUNS; i++) {
-        const suite_scene_sun_t *sun = &s_scene.suns[i];
-        lv_coord_t r = (lv_coord_t)(sun->radius * SCENE_SCALE);
-        if (r < 3) r = 3;
-        lv_obj_set_size(s_suns[i], 2 * r, 2 * r);
-        lv_obj_set_pos(s_suns[i],
-                       (lv_coord_t)(SCENE_CX + sun->x * SCENE_SCALE) - r,
-                       (lv_coord_t)(SCENE_CY + sun->y * SCENE_SCALE) - r);
-    }
+    lv_obj_t *dot = lv_obj_create(parent);
+    lv_obj_set_size(dot, size, size);
+    lv_obj_set_pos(dot, cx - size / 2, cy - size / 2);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_opa(dot, opa, 0);
+    lv_obj_set_style_border_width(dot, 0, 0);
+    lv_obj_set_style_pad_all(dot, 0, 0);
+    lv_obj_clear_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
+    return dot;
 }
 
-// 星空:固定种子 LCG 生成确定性点位,集中在场景带。
+// 星空:固定种子 LCG 生成确定性点位/尺寸/配色,铺满天区。
 static void stars_create(lv_obj_t *parent)
 {
     uint32_t s = 20261007u;
     for (int i = 0; i < STAR_COUNT; i++) {
         s = s * 1664525u + 1013904223u;
-        lv_coord_t x = (lv_coord_t)((s >> 16) % 234);
-        lv_coord_t y = (lv_coord_t)(((s >> 8) % 178) + 8);
-        lv_obj_t *dot = lv_obj_create(parent);
-        lv_obj_set_size(dot, 2, 2);
-        lv_obj_set_pos(dot, x, y);
-        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_color(dot, lv_color_hex(C_STAR), 0);
-        lv_obj_set_style_bg_opa(dot, (s >> 4) % 2 ? LV_OPA_60 : LV_OPA_40, 0);
-        lv_obj_set_style_border_width(dot, 0, 0);
-        lv_obj_set_style_pad_all(dot, 0, 0);
-        lv_obj_clear_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
+        lv_coord_t x = (lv_coord_t)((s >> 16) % 232) + 4;
+        lv_coord_t y = (lv_coord_t)(((s >> 8) % 150) + 6);
+        lv_coord_t size = (lv_coord_t)((s >> 20) % 2) + 1;
+        uint32_t color = k_star_colors[(s >> 12) % 4];
+        lv_opa_t opa = (s >> 4) % 2 ? LV_OPA_60 : LV_OPA_40;
+        (void)dot_create(parent, size, x, y, color, opa);
+    }
+}
+
+// 拖尾槽位外观固定:新→旧尺寸 6→1 px、透明度 70%→10%,渲染时只移位置。
+static lv_coord_t trail_size(int k)
+{
+    lv_coord_t sz = (lv_coord_t)(6 - (5 * k) / (TRAIL_SLOTS - 1));
+    return sz < 1 ? 1 : sz;
+}
+
+static lv_opa_t trail_opa(int k)
+{
+    return (lv_opa_t)(LV_OPA_70 -
+                      (LV_OPA_70 - LV_OPA_10) * k / (TRAIL_SLOTS - 1));
+}
+
+static void trails_create(lv_obj_t *parent)
+{
+    for (int i = 0; i < SUITE_SCENE_SUNS; i++) {
+        for (int k = 0; k < TRAIL_SLOTS; k++) {
+            s_trail[i][k] = dot_create(parent, trail_size(k), SCENE_CX,
+                                       SCENE_CY, s_scene.suns[i].color,
+                                       trail_opa(k));
+        }
     }
 }
 
 static void suns_create(lv_obj_t *parent)
 {
     for (int i = 0; i < SUITE_SCENE_SUNS; i++) {
-        lv_obj_t *sun = lv_obj_create(parent);
-        lv_obj_set_size(sun, 20, 20);
-        lv_obj_set_style_radius(sun, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_color(sun, lv_color_hex(s_scene.suns[i].color), 0);
-        lv_obj_set_style_bg_opa(sun, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(sun, 0, 0);
-        lv_obj_set_style_pad_all(sun, 0, 0);
-        lv_obj_clear_flag(sun, LV_OBJ_FLAG_SCROLLABLE);
-        s_suns[i] = sun;
+        uint32_t color = s_scene.suns[i].color;
+        // 光晕先创建,压在核心下层;尺寸随核心半径每帧更新。
+        s_glow_out[i] = dot_create(parent, 24, SCENE_CX, SCENE_CY, color,
+                                   LV_OPA_30);
+        s_glow_in[i] = dot_create(parent, 16, SCENE_CX, SCENE_CY, color,
+                                  LV_OPA_60);
+        s_suns[i] = dot_create(parent, 10, SCENE_CX, SCENE_CY,
+                               k_core_colors[i], LV_OPA_COVER);
+    }
+}
+
+static void trails_reset(void)
+{
+    for (int i = 0; i < SUITE_SCENE_SUNS; i++) {
+        for (int k = 0; k < TRAIL_SLOTS; k++) {
+            s_hist[i][k].x = s_scene.suns[i].x;
+            s_hist[i][k].y = s_scene.suns[i].y;
+        }
+    }
+    s_head = 0;
+}
+
+// 每 2 tick 采样一次三太阳位置进环形缓冲。
+static void trails_record(void)
+{
+    if (s_scene.tick % TRAIL_SAMPLE_EVERY) return;
+    for (int i = 0; i < SUITE_SCENE_SUNS; i++) {
+        s_hist[i][s_head].x = s_scene.suns[i].x;
+        s_hist[i][s_head].y = s_scene.suns[i].y;
+    }
+    s_head = (s_head + 1) % TRAIL_SLOTS;
+}
+
+// 帧渲染:核心 + 双层光晕 + 拖尾,只改几何不改样式。
+static void scene_render(void)
+{
+    for (int i = 0; i < SUITE_SCENE_SUNS; i++) {
+        const suite_scene_sun_t *sun = &s_scene.suns[i];
+        float r = sun->radius * SCENE_SCALE;
+        if (r < 3.0f) r = 3.0f;
+        lv_coord_t cx = (lv_coord_t)(SCENE_CX + sun->x * SCENE_SCALE);
+        lv_coord_t cy = (lv_coord_t)(SCENE_CY + sun->y * SCENE_SCALE);
+        lv_coord_t core = (lv_coord_t)(2.0f * r);
+        lv_coord_t in = (lv_coord_t)(3.2f * r);
+        lv_coord_t out = (lv_coord_t)(4.8f * r);
+        lv_obj_set_size(s_glow_out[i], out, out);
+        lv_obj_set_pos(s_glow_out[i], cx - out / 2, cy - out / 2);
+        lv_obj_set_size(s_glow_in[i], in, in);
+        lv_obj_set_pos(s_glow_in[i], cx - in / 2, cy - in / 2);
+        lv_obj_set_size(s_suns[i], core, core);
+        lv_obj_set_pos(s_suns[i], cx - core / 2, cy - core / 2);
+        for (int k = 0; k < TRAIL_SLOTS; k++) {
+            // k=0 最新;环形缓冲从 head-1 往回走。
+            int idx = (s_head - 1 - k + TRAIL_SLOTS) % TRAIL_SLOTS;
+            lv_coord_t tx =
+                (lv_coord_t)(SCENE_CX + s_hist[i][idx].x * SCENE_SCALE);
+            lv_coord_t ty =
+                (lv_coord_t)(SCENE_CY + s_hist[i][idx].y * SCENE_SCALE);
+            lv_coord_t sz = trail_size(k);
+            lv_obj_set_pos(s_trail[i][k], tx - sz / 2, ty - sz / 2);
+        }
     }
 }
 
@@ -174,6 +272,7 @@ static void home_tick(lv_timer_t *timer)
     (void)timer;
     if (!bsp_lvgl_lock(50)) return;  // 拿不到锁就丢帧,下轮再画
     suite_scene_advance(&s_scene);
+    trails_record();
     scene_render();
     clock_refresh();
     weather_refresh();
@@ -203,25 +302,25 @@ static void home_enter(void)
 
     stars_create(s_scr);
 
-    // 地平线(装饰:落日线)
-    lv_obj_t *horizon = lv_obj_create(s_scr);
-    lv_obj_set_size(horizon, 240, 2);
-    lv_obj_set_pos(horizon, 0, SCENE_CY + (lv_coord_t)(0.88f * SCENE_SCALE));
-    lv_obj_set_style_bg_color(horizon, lv_color_hex(C_HORIZON), 0);
-    lv_obj_set_style_bg_opa(horizon, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(horizon, 0, 0);
-    lv_obj_set_style_pad_all(horizon, 0, 0);
-    lv_obj_clear_flag(horizon, LV_OBJ_FLAG_SCROLLABLE);
-
     suite_scene_init(&s_scene);
+    trails_reset();
+    trails_create(s_scr);
     suns_create(s_scr);
 
-    // 标题与电池
+    // 居中标题 + 宽字距英文副题(参考图版式)。
     lv_obj_t *title = lv_label_create(s_scr);
     lv_obj_set_style_text_font(title, &suite_font_16, 0);
-    lv_obj_set_style_text_color(title, lv_color_hex(C_DIM), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 8);
-    lv_label_set_text(title, "三体时钟");
+    lv_obj_set_style_text_color(title, lv_color_hex(C_TITLE), 0);
+    lv_obj_set_style_text_letter_space(title, 2, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
+    lv_label_set_text(title, "三体星轨");
+
+    lv_obj_t *sub = lv_label_create(s_scr);
+    lv_obj_set_style_text_font(sub, &suite_font_16, 0);
+    lv_obj_set_style_text_color(sub, lv_color_hex(C_DIM), 0);
+    lv_obj_set_style_text_letter_space(sub, 2, 0);
+    lv_obj_align(sub, LV_ALIGN_TOP_MID, 0, 40);
+    lv_label_set_text(sub, "THREE-BODY ORBITS");
 
     s_battery = suite_ui_battery_create(s_scr);
 
@@ -229,26 +328,20 @@ static void home_enter(void)
     s_clock_lbl = lv_label_create(s_scr);
     lv_obj_set_style_text_font(s_clock_lbl, &suite_font_clock, 0);
     lv_obj_set_style_text_color(s_clock_lbl, lv_color_hex(C_INK), 0);
-    lv_obj_align(s_clock_lbl, LV_ALIGN_TOP_MID, 0, 192);
+    lv_obj_align(s_clock_lbl, LV_ALIGN_TOP_MID, 0, 200);
     lv_label_set_text(s_clock_lbl, "--:--");
 
     s_date_lbl = lv_label_create(s_scr);
     lv_obj_set_style_text_font(s_date_lbl, &suite_font_16, 0);
     lv_obj_set_style_text_color(s_date_lbl, lv_color_hex(C_DIM), 0);
-    lv_obj_align(s_date_lbl, LV_ALIGN_TOP_MID, 0, 232);
+    lv_obj_align(s_date_lbl, LV_ALIGN_TOP_MID, 0, 240);
     lv_label_set_text(s_date_lbl, "");
 
     s_wx_lbl = lv_label_create(s_scr);
     lv_obj_set_style_text_font(s_wx_lbl, &suite_font_16, 0);
     lv_obj_set_style_text_color(s_wx_lbl, lv_color_hex(C_DIM), 0);
-    lv_obj_align(s_wx_lbl, LV_ALIGN_TOP_MID, 0, 260);
+    lv_obj_align(s_wx_lbl, LV_ALIGN_TOP_MID, 0, 266);
     lv_label_set_text(s_wx_lbl, "");
-
-    lv_obj_t *hint = lv_label_create(s_scr);
-    lv_obj_set_style_text_font(hint, &suite_font_16, 0);
-    lv_obj_set_style_text_color(hint, lv_color_hex(C_DIM), 0);
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, 12, -8);
-    lv_label_set_text(hint, "确认 > 功能");
 
     s_shown_time_state = -1;
     s_shown_min = -1;

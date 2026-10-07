@@ -6,9 +6,9 @@
 #include <math.h>
 
 static const uint32_t k_sun_colors[SUITE_SCENE_SUNS] = {
-    0xE8C24A,  // 熔金
-    0xD96A4A,  // 焰红
-    0x6AA5D9,  // 冷蓝
+    0xFF5A3C,  // 焰橙(霓虹)
+    0x35E0FF,  // 电青(霓虹)
+    0xC94AFF,  // 幻紫(霓虹)
 };
 static const float k_sun_radius[SUITE_SCENE_SUNS] = { 0.10f, 0.08f, 0.07f };
 
