@@ -1,5 +1,5 @@
-// main/main.c —— FoloToy AI Passport 五合一应用入口(干线)。
-// 干线阶段:应用外壳 + 连接基础(Wi-Fi/SNTP/天气客户端) + 状态页。
+// main/main.c —— FoloToy AI Passport 五合一应用入口。
+// 启动链:BSP 显示 → 应用外壳 → 连接基础(Wi-Fi/SNTP/天气) → 首页(三体时钟)。
 // 硬件初始化沿用 BSP;失败路径参考原基线 demo(见 git 历史/演示分支)。
 #include "bsp_battery.h"
 #include "bsp_display.h"
@@ -9,7 +9,7 @@
 
 #include "suite_app.h"
 #include "suite_connection.h"
-#include "suite_pages.h"
+#include "suite_home.h"
 #include "suite_weather.h"
 
 static const char *TAG = "main";
@@ -38,11 +38,11 @@ void app_main(void)
     }
 
     if (suite_connection_start() != ESP_OK) {
-        ESP_LOGW(TAG, "连接管理启动失败,状态页将显示离线");
+        ESP_LOGW(TAG, "连接管理启动失败,首页将显示离线");
     }
     (void)suite_weather_start();
 
-    if (!suite_app_start(&SUITE_PAGE_STATUS)) {
+    if (!suite_app_start(&SUITE_PAGE_HOME)) {
         ESP_LOGE(TAG, "首页进入失败");
         return;
     }
