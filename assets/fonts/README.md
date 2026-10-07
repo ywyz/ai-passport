@@ -33,13 +33,16 @@ Any change to `suite_charset.txt` **must** be followed by regenerating
 npx lv_font_conv --size 16 --bpp 4 --format lvgl \
   --font NotoSansSC-Regular.otf \
   --symbols "$(sed 's|//.*||' suite_charset.txt | tr -d '[:space:]')" \
+  --range 0x20 \
   --lv-font-name suite_font_16 --no-compress --force-fast-kern-format \
   -o ../main/fonts/suite_font_16.c
 ```
 
 `lv_font_conv` takes symbols from the `--symbols` argument; comment lines in
-`suite_charset.txt` are stripped first, and the space plus ASCII punctuation
-on line 3 must be preserved. `--no-compress` stores glyphs uncompressed so
+`suite_charset.txt` are stripped first. `--range 0x20` is required
+because `--symbols` treats whitespace as a delimiter and silently drops the
+space glyph otherwise (it would render as a placeholder box on device).
+`--no-compress` stores glyphs uncompressed so
 rendering does not depend on LVGL font-decompression support (kept enabled in
 `sdkconfig.defaults` via `CONFIG_LV_USE_FONT_COMPRESSED` as a second belt).
 The 32 px clock font is regenerated the same way with

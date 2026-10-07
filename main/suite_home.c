@@ -228,8 +228,13 @@ static void clock_refresh(void)
         s_shown_min = c.minute;
         snprintf(buf, sizeof(buf), "%02d:%02d", c.hour, c.minute);
         lv_label_set_text(s_clock_lbl, buf);
+        // "日一二三四五六" 是 UTF-8 定长 3 字节/字且无结尾符的字面量,
+        // 必须按 3 字节拷贝;直接 %s 会把后续字符全部带出("星期三四五六")。
+        char wk[4];
+        memcpy(wk, "日一二三四五六" + c.weekday * 3, 3);
+        wk[3] = '\0';
         snprintf(buf, sizeof(buf), "%04d-%02d-%02d 星期%s", c.year, c.month,
-                 c.day, "日一二三四五六" + c.weekday * 3);
+                 c.day, wk);
         lv_label_set_text(s_date_lbl, buf);
         lv_obj_set_style_text_color(s_date_lbl, lv_color_hex(C_DIM), 0);
     } else {
