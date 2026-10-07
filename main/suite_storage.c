@@ -69,8 +69,10 @@ esp_err_t suite_storage_city_get(suite_city_t *out)
     if (!out) return ESP_ERR_INVALID_ARG;
     memset(out, 0, sizeof(*out));
     // 默认:北京,UTC+8。无存储值时直接用默认,不视为错误。
+    // 城市名必须是中文(与 k_cities 一致):子集字库无小写拉丁字形,
+    // "Beijing" 会上屏成 "B"+空白(设备实测)。
     *out = (suite_city_t){
-        .name = "Beijing", .lat_x1e4 = 395427, .lon_x1e4 = 1163916, .tz_off_s = 8 * 3600,
+        .name = "北京", .lat_x1e4 = 395427, .lon_x1e4 = 1163916, .tz_off_s = 8 * 3600,
     };
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READONLY, &h);

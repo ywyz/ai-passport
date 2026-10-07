@@ -27,8 +27,10 @@ CONFIG_LV_FONT_MONTSERRAT_20=y
 # 生成的子集字体使用压缩位图(lv_font_conv 默认),必须开启解码支持。
 CONFIG_LV_USE_FONT_COMPRESSED=y
 # LVGL 内置 malloc 池大小(KB)。它是独立静态区、不与系统堆共享,配大了会白白占用 RAM。
-# 五合一首页含场景对象与频繁标签刷新,32KB 留出碎片余量;若再出现绘制卡死/看门狗,继续调大。
-CONFIG_LV_MEM_SIZE_KILOBYTES=32
+# 设置页 48 城约 100 个对象实测可耗尽 32KB 池(children realloc 返回 NULL 崩溃,
+# 设备实证 MTVAL=0xc4=4*49);64KB 按 ~300B/对象留出翻倍余量。设备无 PSRAM,
+# 启动空闲系统堆约 211KB,增大后 Wi-Fi/TLS 链路仍有充足余量。
+CONFIG_LV_MEM_SIZE_KILOBYTES=64
 
 # --- 系统 ---
 CONFIG_FREERTOS_HZ=1000
