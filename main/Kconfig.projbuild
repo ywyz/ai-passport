@@ -1,0 +1,15 @@
+# main/Kconfig.projbuild —— 五合一应用配置。
+menu "AI Passport Suite"
+
+    config SUITE_DEFAULT_WIFI_SSID
+        string "Bootstrap Wi-Fi SSID (dev bootstrap only)"
+        default ""
+        help
+            开发引导用:设备 NVS 无凭据且此处非空时,首启动写入 NVS。
+            仓库保持为空;生产配网走浏览器 BLE(另行阶段),不在源码提交秘密。
+
+    config SUITE_DEFAULT_WIFI_PASS
+        string "Bootstrap Wi-Fi password (dev bootstrap only)"
+        default ""
+
+endmenu

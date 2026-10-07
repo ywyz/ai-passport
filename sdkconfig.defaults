@@ -31,6 +31,12 @@ CONFIG_LV_MEM_SIZE_KILOBYTES=24
 # --- 系统 ---
 CONFIG_FREERTOS_HZ=1000
 
+# --- SNTP 校时(SC-03:先校时再 TLS,不关证书验证)---
+CONFIG_LWIP_SNTP_MAX_SERVERS=3
+
+# --- TLS 证书包(Open-Meteo/服务器 HTTPS 用系统 CA 包校验)---
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+
 # --- Bluetooth LE / NimBLE ---
 # ESP32-C3 仅支持 BLE；示例只启用单连接 peripheral 所需的最小 host 配置。
 CONFIG_BT_ENABLED=y
