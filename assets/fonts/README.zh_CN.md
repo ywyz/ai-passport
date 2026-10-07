@@ -29,14 +29,16 @@ AI Passport 五合一应用使用**字集子集字体**渲染中文 UI,无需把
 ```bash
 npx lv_font_conv --size 16 --bpp 4 --format lvgl \
   --font NotoSansSC-Regular.otf \
-  --symbols "$(tr -d '[:space:]' < suite_charset.txt; printf ' ')" \
-  --lv-font-name suite_font_16 --force-fast-kern-format \
+  --symbols "$(sed 's|//.*||' suite_charset.txt | tr -d '[:space:]')" \
+  --lv-font-name suite_font_16 --no-compress --force-fast-kern-format \
   -o ../main/fonts/suite_font_16.c
 ```
 
-`lv_font_conv` 通过 `--symbols` 接收字符;`suite_charset.txt` 第 3 行的空格
-与 ASCII 标点必须保留。32 px 时钟字体用相同命令生成,参数改为
-`--symbols "0123456789:- "` 与 `--lv-font-name suite_font_clock`。
+`lv_font_conv` 通过 `--symbols` 接收字符;先剔除 `suite_charset.txt` 的注释行,
+第 3 行的空格与 ASCII 标点必须保留。`--no-compress` 表示字模不压缩存储,
+渲染不依赖 LVGL 字体解压能力(`sdkconfig.defaults` 中仍保留
+`CONFIG_LV_USE_FONT_COMPRESSED` 双保险)。32 px 时钟字体用相同命令生成,
+参数改为 `--symbols "0123456789:- "` 与 `--lv-font-name suite_font_clock`。
 
 ## 缺字检查清单
 

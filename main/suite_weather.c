@@ -39,12 +39,21 @@ static void wx_store(const suite_weather_data_t *d)
     xSemaphoreGive(s_wx.mtx);
 }
 
-// esp_http_client 事件:只读长度,不拷贝。
+// 响应体收集缓冲:perform() 会在内部读完响应体并经事件回调投递,
+// 之后再 esp_http_client_read() 读不到数据,必须在回调里收集。
+static char s_body[WX_BODY_MAX];
+static int s_body_len;
+
+// esp_http_client 事件:收集 ON_DATA 分块,超出上限即截断丢弃。
 static esp_err_t wx_http_event(esp_http_client_event_t *evt)
 {
     if (evt->event_id == HTTP_EVENT_ON_DATA && evt->data_len > 0) {
-        // 只需 current 段的头部字段;超长响应直接标记丢弃。
-        if (evt->data_len > WX_BODY_MAX) return ESP_OK;
+        int room = WX_BODY_MAX - 1 - s_body_len;
+        int copy = evt->data_len < room ? evt->data_len : room;
+        if (copy > 0) {
+            memcpy(s_body + s_body_len, evt->data, copy);
+            s_body_len += copy;
+        }
     }
     return ESP_OK;
 }
@@ -58,7 +67,6 @@ static bool wx_fetch_once(const suite_city_t *city, suite_weather_data_t *out)
         return false;
     }
 
-    static char body[WX_BODY_MAX];  // 静态缓冲,避免任务栈超限
     esp_http_client_config_t cfg = {
         .url = url,
         .event_handler = wx_http_event,
@@ -71,32 +79,30 @@ static bool wx_fetch_once(const suite_city_t *city, suite_weather_data_t *out)
     if (!client) return false;
 
     bool ok = false;
+    s_body_len = 0;
     esp_err_t err = esp_http_client_perform(client);
     if (err == ESP_OK && esp_http_client_get_status_code(client) == 200) {
         int64_t now = suite_connection_now();
-        // 分块读入静态缓冲;超出上限即截断(电流字段在响应头部,截断可接受)。
-        int offset = 0;
-        int n;
-        while ((n = esp_http_client_read(client, body + offset,
-                                         WX_BODY_MAX - 1 - offset)) > 0) {
-            offset += n;
-            if (offset >= WX_BODY_MAX - 1) break;
-        }
-        body[offset] = '\0';
-
-        double temp = 0.0;
-        long code = 0;
-        if (suite_wx_extract_double(body, "temperature_2m", &temp) &&
-            suite_wx_extract_int(body, "weather_code", &code)) {
-            memset(out, 0, sizeof(*out));
-            out->valid = true;
-            out->temperature = temp;
-            out->wmo_code = code;
-            out->fetched_epoch = now;
-            out->stale = !suite_wx_is_fresh(out->fetched_epoch, suite_connection_now());
-            ok = true;
+        // 回调已收集响应体;空体(被截断/无数据)按解析失败处理。
+        if (s_body_len <= 0) {
+            ESP_LOGW(TAG, "响应体为空");
         } else {
-            ESP_LOGW(TAG, "响应缺少必需字段");
+            s_body[s_body_len] = '\0';
+            double temp = 0.0;
+            long code = 0;
+            if (suite_wx_extract_double(s_body, "temperature_2m", &temp) &&
+                suite_wx_extract_int(s_body, "weather_code", &code)) {
+                memset(out, 0, sizeof(*out));
+                out->valid = true;
+                out->temperature = temp;
+                out->wmo_code = code;
+                out->fetched_epoch = now;
+                out->stale = !suite_wx_is_fresh(out->fetched_epoch,
+                                                suite_connection_now());
+                ok = true;
+            } else {
+                ESP_LOGW(TAG, "响应缺少必需字段");
+            }
         }
     } else {
         ESP_LOGW(TAG, "天气请求失败: %s HTTP %d",
@@ -111,43 +117,41 @@ static void wx_task(void *arg)
 {
     (void)arg;
     for (;;) {
-        bool do_fetch = s_wx.refresh_now;
-        s_wx.refresh_now = false;
+        // 未就绪(离线/未校时)2s 复查;成功 30min;失败 60s 重试。
+        // 首轮即尝试:在线且时间可信时开机数秒内出天气。
+        int64_t wait_s;
+        if (suite_connection_state() == SUITE_CONN_ONLINE &&
+            suite_time_is_trusted(suite_connection_time(),
+                                  suite_connection_now())) {
+            suite_city_t city;
+            (void)suite_storage_city_get(&city);
 
-        if (!do_fetch) {
-            // 周期睡眠(30 分钟)或等待刷新请求;分片睡眠便于及时退出。
-            for (int i = 0; i < (int)(SUITE_WX_REFRESH_PERIOD_S) && s_wx.run &&
-                            !s_wx.refresh_now;
-                 i++) {
-                vTaskDelay(pdMS_TO_TICKS(1000));
+            suite_weather_data_t d;
+            if (wx_fetch_once(&city, &d)) {
+                wx_store(&d);
+                ESP_LOGI(TAG, "天气更新: %.1f C code=%ld", d.temperature,
+                         d.wmo_code);
+                wait_s = SUITE_WX_REFRESH_PERIOD_S;
+            } else {
+                // 失败保留旧数据,新鲜度随时间自然过期(UI 独立提示)。
+                xSemaphoreTake(s_wx.mtx, portMAX_DELAY);
+                if (s_wx.data.valid) {
+                    s_wx.data.stale = !suite_wx_is_fresh(
+                        s_wx.data.fetched_epoch, suite_connection_now());
+                }
+                xSemaphoreGive(s_wx.mtx);
+                wait_s = 60;
             }
-            do_fetch = s_wx.refresh_now;
-            s_wx.refresh_now = false;
-            if (!s_wx.run) break;
-        }
-
-        if (suite_connection_state() != SUITE_CONN_ONLINE) continue;
-        if (!suite_time_is_trusted(suite_connection_time(),
-                                   suite_connection_now())) {
-            continue;  // TLS 需要正确时间:先等 SNTP
-        }
-
-        suite_city_t city;
-        (void)suite_storage_city_get(&city);
-
-        suite_weather_data_t d;
-        if (wx_fetch_once(&city, &d)) {
-            wx_store(&d);
-            ESP_LOGI(TAG, "天气更新: %.1f C code=%ld", d.temperature, d.wmo_code);
         } else {
-            // 失败保留旧数据,新鲜度随时间自然过期(UI 独立提示)。
-            xSemaphoreTake(s_wx.mtx, portMAX_DELAY);
-            if (s_wx.data.valid) {
-                s_wx.data.stale = !suite_wx_is_fresh(s_wx.data.fetched_epoch,
-                                                     suite_connection_now());
-            }
-            xSemaphoreGive(s_wx.mtx);
+            wait_s = 2;
         }
+
+        // 分片睡眠:及时响应退出与手动刷新。
+        for (int64_t i = 0; s_wx.run && !s_wx.refresh_now && i < wait_s;
+             i++) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+        if (!s_wx.run) break;
     }
     s_wx.task = NULL;
     vTaskDelete(NULL);

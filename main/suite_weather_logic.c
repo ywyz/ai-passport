@@ -81,7 +81,14 @@ static long find_key_value_pos(const char *json, const char *key)
                                        json[j] == '\n' || json[j] == '\r')) {
                         j++;
                     }
-                    return j;
+                    // Open-Meteo 的 current_units 对象先给出字符串值键
+                    // ("temperature_2m":"°C"),数值键在后面的 current 对象里。
+                    // 值不是数字时继续向后扫描同名键。
+                    if (j < len && (json[j] == '-' || json[j] == '+' ||
+                                    json[j] == '.' ||
+                                    (json[j] >= '0' && json[j] <= '9'))) {
+                        return j;
+                    }
                 }
             }
         next:

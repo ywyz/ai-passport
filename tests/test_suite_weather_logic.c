@@ -50,6 +50,21 @@ int main(void) {
     assert(suite_wx_extract_double(cold, "temperature_2m", &d));
     assert(d > -7.51 && d < -7.49);
 
+    // 回归:Open-Meteo 真实响应里 current_units 的字符串值同名键在前,
+    // 数值键在后;必须跳过字符串值继续向后找。
+    const char *real =
+        "{\"latitude\":39.89,\"current_units\":{"
+        "\"time\":\"iso8601\",\"interval\":\"seconds\","
+        "\"temperature_2m\":\"°C\",\"weather_code\":\"wmo code\"},"
+        "\"current\":{\"time\":\"2026-10-07T20:00\",\"interval\":900,"
+        "\"temperature_2m\":21.5,\"weather_code\":0}}";
+    assert(suite_wx_extract_double(real, "temperature_2m", &d));
+    assert(d > 21.49 && d < 21.51);
+    assert(suite_wx_extract_int(real, "weather_code", &v) && v == 0);
+    // 值全是字符串(无数值键)时仍判失败。
+    assert(!suite_wx_extract_double("{\"u\":{\"temperature_2m\":\"°C\"}}",
+                                    "temperature_2m", &d));
+
     // 新鲜度:窗口内新鲜,超窗/无效时间过期。
     assert(suite_wx_is_fresh(1000, 1000 + SUITE_WX_FRESH_WINDOW_S - 1));
     assert(!suite_wx_is_fresh(1000, 1000 + SUITE_WX_FRESH_WINDOW_S));

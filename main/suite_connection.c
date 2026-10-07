@@ -33,7 +33,6 @@ typedef struct {
     volatile bool sntp_up;
     bool wifi_inited;
     bool wifi_started;
-    bool netif_ready;
     bool running;
 } conn_ctx_t;
 
@@ -88,11 +87,7 @@ static void sntp_stop(void)
 
 static void wifi_stack_up(void)
 {
-    if (!s_conn.netif_ready) {
-        ESP_ERROR_CHECK(esp_netif_init());
-        ESP_ERROR_CHECK(esp_event_loop_create_default());
-        s_conn.netif_ready = true;
-    }
+    // esp_netif_init 与默认事件循环已在 suite_connection_start 中创建。
     if (!s_conn.netif) {
         esp_netif_config_t cfg = ESP_NETIF_DEFAULT_WIFI_STA();
         s_conn.netif = esp_netif_new(&cfg);
@@ -264,6 +259,19 @@ esp_err_t suite_connection_start(void)
 
     s_conn.queue = xQueueCreate(CONN_QUEUE_DEPTH, sizeof(queue_ev_t));
     if (!s_conn.queue) return ESP_ERR_NO_MEM;
+
+    // 事件处理器注册在主任务;netif/默认循环必须先行创建(conn_task 内只做
+    // 较慢的 Wi-Fi 初始化)。循环已存在时容忍 INVALID_STATE(幂等)。
+    err = esp_netif_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "netif 初始化失败: %s", esp_err_to_name(err));
+        return err;
+    }
+    err = esp_event_loop_create_default();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "事件循环创建失败: %s", esp_err_to_name(err));
+        return err;
+    }
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
         WIFI_EVENT, ESP_EVENT_ANY_ID, on_wifi_event, NULL, NULL));
