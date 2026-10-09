@@ -15,7 +15,9 @@ typedef struct suite_page {
     void (*action)(suite_action_t act);  // 输入任务上下文;页面自管 LVGL 锁
 } suite_page_t;
 
-#define SUITE_PAGE_STACK_MAX 4
+// 页面栈深度预算:首页(1)→启动器(2)→设置(3)→省份(4)→城市(5),
+// 预留 1 层给后续子页。每层仅一个页面指针,增大成本可忽略。
+#define SUITE_PAGE_STACK_MAX 6
 
 // 初始化外壳并进入 boot 页(持 LVGL 锁由内部处理)。
 bool suite_app_start(const suite_page_t *boot_page);
