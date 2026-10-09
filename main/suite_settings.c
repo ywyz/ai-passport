@@ -1,20 +1,19 @@
-// main/suite_settings.c —— 设置页:城市选择(保存 NVS + 触发天气刷新)
-// 与连接状态入口。城市坐标为市中心近似值,对 Open-Meteo 网格精度足够。
+// main/suite_settings.c —— 设置页:选择城市(省市两级选择器入口)与
+// 连接状态入口。城市坐标由 suite_city_data.c 提供,NVS 保存与天气刷新
+// 在城市页确认时完成。
 #include "suite_settings.h"
 
+#include "suite_app.h"
+#include "suite_city_picker.h"
 #include "suite_pages.h"
 #include "suite_storage.h"
-#include "suite_weather.h"
 
 #include "bsp_display.h"
-#include "esp_log.h"
 #include "lvgl.h"
 
 #include "fonts/suite_fonts.h"
 
 #include <string.h>
-
-static const char *TAG = "suite_settings";
 
 // ---- 主题(与 suite_pages.c 保持一致) ----
 #define C_BG 0x0E1420
@@ -23,70 +22,18 @@ static const char *TAG = "suite_settings";
 #define C_INK 0xE8EEF7
 #define C_DIM 0x8CA0B8
 
-typedef struct {
-    const char *name;
-    int32_t lat_x1e4;
-    int32_t lon_x1e4;
-} city_preset_t;
+#define ROW_W 216
+#define ROW_H 26
+#define ROW_STEP 29
+#define ROW_Y0 36
 
-static const city_preset_t k_cities[] = {
-    { "北京", 395427, 1163916 },
-    { "上海", 312304, 1214737 },
-    { "广州", 231291, 1132644 },
-    { "深圳", 225431, 1140579 },
-    { "杭州", 302741, 1201551 },
-    { "成都", 305728, 1040668 },
-    { "武汉", 305928, 1143055 },
-    { "西安", 343416, 1089398 },
-    // 直辖市/省会与主要城市;江苏地级市整排在前(用户实测反馈补南通)。
-    { "天津", 390842, 1172009 },
-    { "重庆", 295630, 1065516 },
-    { "南京", 320603, 1187969 },
-    { "苏州", 312989, 1205853 },
-    { "无锡", 314912, 1203119 },
-    { "常州", 318107, 1199740 },
-    { "南通", 320303, 1208747 },
-    { "徐州", 342044, 1172857 },
-    { "扬州", 323947, 1194126 },
-    { "宁波", 298683, 1215440 },
-    { "温州", 289967, 1206994 },
-    { "合肥", 318206, 1172272 },
-    { "福州", 260745, 1192965 },
-    { "厦门", 244798, 1180894 },
-    { "南昌", 286820, 1158579 },
-    { "青岛", 360671, 1203826 },
-    { "济南", 366512, 1171201 },
-    { "郑州", 347466, 1136254 },
-    { "长沙", 282282, 1129388 },
-    { "南宁", 228170, 1083665 },
-    { "桂林", 252740, 1102900 },
-    { "海口", 200444, 1101999 },
-    { "昆明", 250389, 1027183 },
-    { "贵阳", 266470, 1066302 },
-    { "兰州", 360611, 1038343 },
-    { "银川", 384872, 1062309 },
-    { "西宁", 366171, 1017782 },
-    { "乌鲁木齐", 438256, 876168 },
-    { "拉萨", 296520, 911721 },
-    { "哈尔滨", 458038, 1265350 },
-    { "长春", 438171, 1253235 },
-    { "沈阳", 418057, 1234315 },
-    { "大连", 389140, 1216147 },
-    { "太原", 378706, 1125489 },
-    { "石家庄", 380428, 1145149 },
-    { "呼和浩特", 408415, 1117519 },
-    { "香港", 223193, 1141694 },
-    { "澳门", 221987, 1135439 },
-    { "台北", 250330, 1215654 },
-};
-#define CITY_COUNT (sizeof(k_cities) / sizeof(k_cities[0]))
-
-#define ROW_CONN ((int)(CITY_COUNT))      // 最后一行:连接状态入口
-#define ROW_TOTAL ((int)(CITY_COUNT) + 1)
+#define ROW_CITY 0  // 选择城市(右侧显示当前生效城市)
+#define ROW_CONN 1  // 连接状态入口
+#define ROW_TOTAL 2
 
 static lv_obj_t *s_scr;
 static lv_obj_t *s_rows[ROW_TOTAL];
-static lv_obj_t *s_battery;
+static lv_obj_t *s_cur_city;
 static int s_sel;
 
 static void row_refresh(void)
@@ -98,15 +45,13 @@ static void row_refresh(void)
         lv_obj_t *lbl = lv_obj_get_child(s_rows[i], 0);
         lv_obj_set_style_text_color(lbl, lv_color_hex(sel ? C_INK : C_DIM), 0);
     }
-    // 城市多于可见行数:把选中行滚入可视区。
-    lv_obj_scroll_to_view(s_rows[s_sel], LV_ANIM_OFF);
 }
 
 static lv_obj_t *row_create(lv_obj_t *parent, const char *text, int i)
 {
     lv_obj_t *row = lv_obj_create(parent);
-    lv_obj_set_size(row, 216, 26);
-    lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 36 + i * 29);
+    lv_obj_set_size(row, ROW_W, ROW_H);
+    lv_obj_align(row, LV_ALIGN_TOP_MID, 0, ROW_Y0 + i * ROW_STEP);
     lv_obj_set_style_bg_color(row, lv_color_hex(C_CARD), 0);
     lv_obj_set_style_radius(row, 8, 0);
     lv_obj_set_style_border_width(row, 0, 0);
@@ -129,33 +74,33 @@ static void settings_enter(void)
     lv_obj_set_style_text_font(title, &suite_font_16, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(C_DIM), 0);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 8);
-    lv_label_set_text(title, "城市设置");
+    lv_label_set_text(title, "设置");
 
-    s_battery = suite_ui_battery_create(s_scr);
+    (void)suite_ui_battery_create(s_scr);
 
-    for (int i = 0; i < (int)CITY_COUNT; i++) {
-        s_rows[i] = row_create(s_scr, k_cities[i].name, i);
+    s_rows[ROW_CITY] = row_create(s_scr, "选择城市", ROW_CITY);
+    // 行右侧展示当前生效城市,读不到时留空。
+    char name[32];
+    name[0] = '\0';
+    suite_city_t cur;
+    if (suite_storage_city_get(&cur) == ESP_OK) {
+        strlcpy(name, cur.name, sizeof(name));
     }
+    s_cur_city = lv_label_create(s_rows[ROW_CITY]);
+    lv_obj_set_style_text_font(s_cur_city, &suite_font_16, 0);
+    lv_obj_set_style_text_color(s_cur_city, lv_color_hex(C_DIM), 0);
+    lv_label_set_text(s_cur_city, name);
+    lv_obj_align(s_cur_city, LV_ALIGN_RIGHT_MID, -14, 0);
+
     s_rows[ROW_CONN] = row_create(s_scr, "连接状态", ROW_CONN);
 
     lv_obj_t *hint = lv_label_create(s_scr);
     lv_obj_set_style_text_font(hint, &suite_font_16, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(C_DIM), 0);
-    // 列表超出一屏:提示随内容排在末行之后,不在首屏内遮挡行。
-    lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 36 + ROW_TOTAL * 29 + 6);
+    lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, ROW_Y0 + ROW_TOTAL * ROW_STEP + 6);
     lv_label_set_text(hint, "确认 长按 返回");
 
-    // 默认选中当前生效城市;读不到则选中第一项。
-    suite_city_t cur;
-    s_sel = 0;
-    if (suite_storage_city_get(&cur) == ESP_OK) {
-        for (int i = 0; i < (int)CITY_COUNT; i++) {
-            if (strcmp(k_cities[i].name, cur.name) == 0) {
-                s_sel = i;
-                break;
-            }
-        }
-    }
+    s_sel = ROW_CITY;
     row_refresh();
     lv_screen_load(s_scr);
 }
@@ -172,34 +117,28 @@ static void on_settings_action(suite_action_t act)
 {
     switch (act) {
     case SUITE_ACTION_UP:
-        if (s_sel > 0) {
+        if (s_sel > ROW_CITY) {
             s_sel--;
-            row_refresh();
+            if (bsp_lvgl_lock(200)) {
+                row_refresh();
+                bsp_lvgl_unlock();
+            }
         }
         break;
     case SUITE_ACTION_DOWN:
-        if (s_sel < ROW_TOTAL - 1) {
+        if (s_sel < ROW_CONN) {
             s_sel++;
-            row_refresh();
+            if (bsp_lvgl_lock(200)) {
+                row_refresh();
+                bsp_lvgl_unlock();
+            }
         }
         break;
     case SUITE_ACTION_OK:
         if (s_sel == ROW_CONN) {
             (void)suite_app_push(&SUITE_PAGE_STATUS);
         } else {
-            suite_city_t city;
-            memset(&city, 0, sizeof(city));
-            strlcpy(city.name, k_cities[s_sel].name, sizeof(city.name));
-            city.lat_x1e4 = k_cities[s_sel].lat_x1e4;
-            city.lon_x1e4 = k_cities[s_sel].lon_x1e4;
-            city.tz_off_s = 8 * 3600;
-            esp_err_t err = suite_storage_city_set(&city);
-            if (err != ESP_OK) {
-                ESP_LOGE(TAG, "城市保存失败: %s", esp_err_to_name(err));
-            }
-            // 在线且时间可信时立即按新城市刷新;否则 worker 上线后自取。
-            (void)suite_weather_request_refresh();
-            (void)suite_app_back();
+            (void)suite_app_push(&SUITE_PAGE_PROVINCE);
         }
         break;
     default:

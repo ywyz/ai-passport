@@ -30,12 +30,13 @@ Any change to `suite_charset.txt` **must** be followed by regenerating
 `main/fonts/suite_font_16.c` (node ≥ 18 with `npx`):
 
 ```bash
+# Run from assets/fonts/ ; the -o path must climb two levels to reach main/.
 npx lv_font_conv --size 16 --bpp 4 --format lvgl \
   --font NotoSansSC-Regular.otf \
   --symbols "$(sed 's|//.*||' suite_charset.txt | tr -d '[:space:]')" \
   --range 0x20 \
   --lv-font-name suite_font_16 --no-compress --force-fast-kern-format \
-  -o ../main/fonts/suite_font_16.c
+  -o ../../main/fonts/suite_font_16.c
 ```
 
 `lv_font_conv` takes symbols from the `--symbols` argument; comment lines in

@@ -27,12 +27,13 @@ AI Passport 五合一应用使用**字集子集字体**渲染中文 UI,无需把
 `main/fonts/suite_font_16.c`(需 node ≥ 18,可用 `npx`):
 
 ```bash
+# 在 assets/fonts/ 目录下运行;-o 需上跳两级才能落到 main/。
 npx lv_font_conv --size 16 --bpp 4 --format lvgl \
   --font NotoSansSC-Regular.otf \
   --symbols "$(sed 's|//.*||' suite_charset.txt | tr -d '[:space:]')" \
   --range 0x20 \
   --lv-font-name suite_font_16 --no-compress --force-fast-kern-format \
-  -o ../main/fonts/suite_font_16.c
+  -o ../../main/fonts/suite_font_16.c
 ```
 
 `lv_font_conv` 通过 `--symbols` 接收字符;先剔除 `suite_charset.txt` 的注释行。
