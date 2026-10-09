@@ -26,20 +26,41 @@ CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_20=y
 # 生成的子集字体使用压缩位图(lv_font_conv 默认),必须开启解码支持。
 CONFIG_LV_USE_FONT_COMPRESSED=y
-# LVGL 内置 malloc 池大小(KB)。它是独立静态区、不与系统堆共享,配大了会白白占用 RAM。
+# LVGL 内置 malloc 池大小。独立静态区、不与系统堆共享,配大了会白白占用 RAM。
+# 注意:LVGL 9.6 已弃用 KILOBYTES 变量,必须直接用字节单位 LV_MEM_SIZE。
 # 设置页 48 城约 100 个对象实测可耗尽 32KB 池(children realloc 返回 NULL 崩溃,
-# 设备实证 MTVAL=0xc4=4*49);64KB 按 ~300B/对象留出翻倍余量。设备无 PSRAM,
-# 启动空闲系统堆约 211KB,增大后 Wi-Fi/TLS 链路仍有充足余量。
-CONFIG_LV_MEM_SIZE_KILOBYTES=64
+# 设备实证 MTVAL=0xc4=4*49);48KB(49152)按 ~300B/对象留出安全余量(功能 9 实测 <32K)。
+# 降池动机:RSA-4096 验签走软件路径(C3 硬件上限 3072bit),需要大块连续堆,
+# 64K 池时期验签时刻最大连续块仅 17.4K,软件模幂分配失败(-0x4290=
+# RSA_PUBLIC_FAILED+MPI_ALLOC_FAILED);48K 池释放 16K 后 ~33K 可满足。
+CONFIG_LV_MEM_SIZE=49152
 
 # --- 系统 ---
 CONFIG_FREERTOS_HZ=1000
 
 # --- SNTP 校时(SC-03:先校时再 TLS,不关证书验证)---
 CONFIG_LWIP_SNTP_MAX_SERVERS=3
+# TCP 接收窗口 2*MSS:BT 常驻后堆余量小,服务器一次打来的 TLS 证书航班
+# (约 5K)会在内核以 pbuf 排队,把最大连续块压垮,导致验签阶段大数分配
+# 失败(MBEDTLS_ERR_MPI_ALLOC_FAILED,实测证书验签 -0x3000)。窗口减半后
+# 排队减半;天气/配网均为小报文,吞吐不受影响。
+CONFIG_LWIP_TCP_WND_DEFAULT=2880
 
 # --- TLS 证书包(Open-Meteo/服务器 HTTPS 用系统 CA 包校验)---
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+# BLE 常驻后内部堆紧张:默认 16K/4K TLS 缓冲导致 ssl_setup 分配失败
+# (-0x7F00)。天气响应为小 JSON,证书链 ≤4K,缩到 4K/1K。
+# 设备实测 BLE+Wi-Fi 就绪后请求前最大连续内部块仅 ~7.5K,
+# ssl_setup 一次分配 in_buf=IN+2048(overhead),8K 时需 ~10.3K 必失败,
+# 4K 时需 ~6.1K 可通过。
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=4096
+# 请求方向只有 GET 头+城市参数(<300B),OUT 1K 足够,BT 常驻后省 1K 连续堆。
+CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=1024
+# 硬件大数加速保持开启:验签链中 ISRG Root X1(RSA-4096)签发的中间证书
+# (Root YR)需要 RSA-4096 模幂,而 C3 硬件上限 3072bit,该运算始终走
+# MBEDTLS_LARGE_KEY_SOFTWARE_MPI 的软件回退。软件模幂需要大块连续堆,
+# 堆余量(见 LVGL 池注释)修复后已满足;软件路径 RSA-4096 验签 <100ms 可接受。
+CONFIG_MBEDTLS_HARDWARE_MPI=y
 
 # --- Bluetooth LE / NimBLE ---
 # ESP32-C3 仅支持 BLE；示例只启用单连接 peripheral 所需的最小 host 配置。
@@ -54,3 +75,30 @@ CONFIG_BT_NIMBLE_HOST_BASED_PRIVACY=n
 CONFIG_BT_NIMBLE_NVS_PERSIST=n
 # 协商更大 ATT MTU,配网分包单包净荷可达 242 字节(省市表/扫描结果更快)。
 CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=247
+# BLE+Wi-Fi 内存预算(ESP32-C3 无 PSRAM,LVGL 64K 池 + BT ~50K + Wi-Fi 栈同驻
+# 内部堆)。BT 常驻后天气 TLS 握手期间堆余量仅 ~18K:ssl 缓冲(~10K)把最大
+# 连续块压到 ~1.5K,一次到达的证书航班(AMPDU 突发,需多个 1600B 缓冲同时
+# 就位)整包丢弃,表现为 ServerHello 永远收不到(超时/被重置),信标也收不到
+# (wifi:m f null)。三管齐下:①关 AMPDU RX,航班逐包到达,小 JSON 流量不需
+# 聚合吞吐;②缩减 NimBLE 单连接池;③OUT 1K(请求 <300B 足够)。
+# 静态 RX 2(配合 AMPDU RX 关 + TCP 窗口 2*MSS):数据包最多 1-2 个在途,
+# 2 个静态缓冲够用,溢出走动态分配(此时 ssl 缓冲未持有,堆充裕)。
+# 静态多留 1 个 = TLS 握手/证书解析阶段少 1.6K 余量,实测差一点就够。
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=2
+CONFIG_ESP_WIFI_RX_MGMT_BUF_NUM_DEF=2
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=n
+CONFIG_BT_CTRL_BLE_MAX_ACT=2
+CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT=4
+CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT=6
+CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=6
+CONFIG_BT_NIMBLE_TRANSPORT_EVT_COUNT=6
+CONFIG_BT_NIMBLE_TRANSPORT_EVT_DISCARD_COUNT=2
+# 共存关键:BT 控制器不睡眠时即使 BLE 静默也会在共存调度中持续占用射频
+# 时间片,实测导致 Wi-Fi 收不到 TLS ServerHello(握手 7s 后 ECONNRESET)。
+# 打开 modem sleep,让 BT 在 BLE 事件间睡掉让出射频。
+CONFIG_BT_CTRL_MODEM_SLEEP=y
+# 软件共存调度才是根因:BT 控制器 disable 后共存调度器仍按"BT 存在"切分
+# 射频时隙(实测 disable 后握手依旧 7s 无 ServerHello 被服务器重置)。本应用
+# BLE 只在配网页使用且广播间隔 1.024s,空口占用极小,关闭软件共存,由硬件
+# 仲裁共享射频,无调度器即无饿死。
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=n

@@ -8,8 +8,10 @@
 #include "suite_weather_logic.h"
 
 #include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -75,6 +77,15 @@ static bool wx_fetch_once(const suite_city_t *city, suite_weather_data_t *out)
         .buffer_size = 2048,
         .buffer_size_tx = 1024,
     };
+    // 诊断:TLS 会话建立(mbedtls_ssl_setup)需要内部堆上 ~12-14K 连续内存,
+    // BLE 常驻后此时刻的余量决定天气功能可用性。DMA 池单独列出:硬件加速
+    // 与 Wi-Fi 驱动只认 DMA 内存,总余量充足也可能因 DMA 池耗尽而失败。
+    ESP_LOGI(TAG, "请求前堆: free=%lu 最大连续=%lu | DMA free=%lu 最大=%lu",
+             (unsigned long)esp_get_free_heap_size(),
+             (unsigned long)heap_caps_get_largest_free_block(
+                 MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_DMA),
+             (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (!client) return false;
 

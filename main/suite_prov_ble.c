@@ -19,8 +19,10 @@
 #include "suite_weather.h"
 
 #include "esp_app_desc.h"
+#include "esp_bt.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -65,6 +67,10 @@ static const ble_uuid128_t k_uuid_info = BLE_UUID128_INIT(
 // ---- 模块全局状态 ----
 static bool s_inited;
 static bool s_hs_synced;
+// BT 射频开关:BLE 控制器即使静默也会让共存调度挤占 Wi-Fi 射频时隙,
+// 实测把天气 TLS 握手下行动包饿死(7s 后被服务器重置)。因此 host 同步
+// 且不在配网会话时关闭控制器射频,进配网页再打开。host 内存常驻不受影响。
+static bool s_radio_on;
 static uint8_t s_addr_type;
 static char s_device_id[5];
 static char s_dev_name[DEV_NAME_LEN + 1];
@@ -162,8 +168,29 @@ static int advertise_start(void)
     struct ble_gap_adv_params params = {0};
     params.conn_mode = BLE_GAP_CONN_MODE_UND;
     params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    // BLE+Wi-Fi 共享同一射频;默认 ~30ms 密广播会挤占 Wi-Fi 时隙,
+    // TLS 握手期间丢包致连接被重置(-0x004C)。放宽到 1.024s,
+    // 手机 Web Bluetooth 扫描发现 ~1s,可接受。
+    params.itvl_min = 1638;  // 0.625ms 单位 → 1.024s
+    params.itvl_max = 1638;
     return ble_gap_adv_start(s_addr_type, NULL, BLE_HS_FOREVER, &params,
                              gap_event, NULL);
+}
+
+// on_sync 运行在 NimBLE host 任务里,直接调 esp_bt_controller_disable 会在
+// 本任务内等待 controller 应答,有死锁风险;改由 esp_timer 延迟到独立任务执行。
+static esp_timer_handle_t s_radio_off_timer;
+
+static void radio_off_timer_cb(void *arg)
+{
+    (void)arg;
+    // 会话已打开(begin 先到)或射频已让出:不打断。
+    if (s_session || !s_radio_on) return;
+    if (esp_bt_controller_disable() == ESP_OK) {
+        s_hs_synced = false;
+        s_radio_on = false;
+        ESP_LOGI(TAG, "BT 射频已让出(非配网时段),Wi-Fi 独占");
+    }
 }
 
 static void on_sync(void)
@@ -181,8 +208,10 @@ static void on_sync(void)
     uint8_t addr[6] = {0};
     rc = ble_hs_id_copy_addr(s_addr_type, addr, NULL);
     if (rc == 0) {
+        // NimBLE 地址按小端存储:addr[0] 是 MAC 末字节。按常规顺序
+        // 取末两字节显示(BLE MAC 98:c3:77:f4:ab:16 → "AB16")。
         snprintf(s_device_id, sizeof(s_device_id), "%02X%02X",
-                 addr[4], addr[5]);
+                 addr[1], addr[0]);
         snprintf(s_dev_name, sizeof(s_dev_name), DEV_NAME_PREFIX "%s",
                  s_device_id);
         const esp_app_desc_t *app = esp_app_get_description();
@@ -193,17 +222,27 @@ static void on_sync(void)
         ESP_LOGI(TAG, "BLE 设备 ID: %s", s_device_id);  // 不含配对码/密码
     }
     s_hs_synced = true;
+    s_radio_on = true;
     if (s_session) {
         rc = advertise_start();
         if (rc != 0 && rc != BLE_HS_EALREADY) {
             ESP_LOGE(TAG, "配网广播启动失败: %d", rc);
         }
+        return;
     }
+    // 不在配网会话:关闭 BT 射频。BLE 控制器静默时共存调度仍会挤占
+    // Wi-Fi 时隙,把天气 TLS 握手下行动包饿死(-0x004C ECONNRESET)。
+    // 配网会话(begin)打开时再 enable,host 将重新走 sync 到这里。
+    // 不直接 disable:host 任务里等 controller 应答有死锁风险,延迟 10ms
+    // 由 esp_timer 任务执行;若期间 begin 先到,回调看到 s_session 会跳过。
+    (void)esp_timer_start_once(s_radio_off_timer, 10 * 1000);
 }
 
 static void on_reset(int reason)
 {
-    ESP_LOGE(TAG, "NimBLE host 复位: %d", reason);
+    // disable 也会走到这里:属于预期的射频让出,不是故障。
+    s_hs_synced = false;
+    ESP_LOGD(TAG, "NimBLE host 复位: %d", reason);
 }
 
 static void nimble_host_task(void *arg)
@@ -328,9 +367,24 @@ esp_err_t suite_prov_ble_init(void)
 {
     if (s_inited) return ESP_OK;
 
+    // 射频让出定时器须先于 host 启动创建:on_sync 里会引用它。
+    const esp_timer_create_args_t timer_args = {
+        .callback = radio_off_timer_cb,
+        .name = "prov_radio_off",
+    };
+    if (esp_timer_create(&timer_args, &s_radio_off_timer) != ESP_OK) {
+        ESP_LOGE(TAG, "射频让出定时器创建失败");
+        return ESP_FAIL;
+    }
+
     esp_err_t err = nimble_port_init();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "nimble_port_init 失败: %s", esp_err_to_name(err));
+        // 失败时输出内部堆余量,便于定位 BT 传输池分配失败的原因。
+        ESP_LOGE(TAG, "nimble_port_init 失败: %s (空闲堆 %lu, 最大连续内部块 %lu)",
+                 esp_err_to_name(err),
+                 (unsigned long)esp_get_free_heap_size(),
+                 (unsigned long)heap_caps_get_largest_free_block(
+                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         return err;
     }
 
@@ -349,8 +403,10 @@ esp_err_t suite_prov_ble_init(void)
 
     nimble_port_freertos_init(nimble_host_task);
     s_inited = true;
-    ESP_LOGI(TAG, "NimBLE 配网服务就绪,空闲堆 %lu 字节",
-             (unsigned long)esp_get_free_heap_size());
+    ESP_LOGI(TAG, "NimBLE 配网服务就绪,空闲堆 %lu,最大连续内部块 %lu",
+             (unsigned long)esp_get_free_heap_size(),
+             (unsigned long)heap_caps_get_largest_free_block(
+                 MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     return ESP_OK;
 }
 
@@ -915,6 +971,20 @@ esp_err_t suite_prov_ble_begin(const char pin[6])
 
     s_session = true;
     s_phase = SUITE_PROV_PHASE_ADVERTISING;
+    // 射频让出期间先恢复 BT 控制器;host re-sync 后 on_sync 会开广播。
+    if (!s_radio_on) {
+        esp_err_t bt_err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
+        if (bt_err != ESP_OK) {
+            ESP_LOGE(TAG, "BT 控制器启用失败: %s", esp_err_to_name(bt_err));
+            s_session = false;
+            s_phase = SUITE_PROV_PHASE_IDLE;
+            vSemaphoreDelete(s_task_done);
+            vQueueDelete(s_pq);
+            s_task_done = NULL;
+            s_pq = NULL;
+            return ESP_FAIL;
+        }
+    }
     if (xTaskCreate(prov_task, "suite_prov", PROV_TASK_STACK, NULL,
                     PROV_TASK_PRIO, &s_ptask) != pdPASS) {
         s_session = false;
@@ -971,6 +1041,15 @@ void suite_prov_ble_end(void)
     s_pq = NULL;
     vSemaphoreDelete(s_task_done);
     s_task_done = NULL;
+
+    // 退出配网:再次让出 BT 射频,恢复 Wi-Fi 独占(host 内存常驻)。
+    if (s_radio_on) {
+        if (esp_bt_controller_disable() == ESP_OK) {
+            s_hs_synced = false;
+            s_radio_on = false;
+            ESP_LOGI(TAG, "配网结束,BT 射频已让出");
+        }
+    }
 }
 
 void suite_prov_ble_snapshot(suite_prov_snapshot_t *out)

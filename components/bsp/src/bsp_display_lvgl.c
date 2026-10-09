@@ -9,7 +9,9 @@
 
 static const char *TAG = "bsp_lvgl";
 
-#define BSP_LVGL_DRAW_BUFFER_LINES 40
+// 绘制缓冲行数:每行 240×2B。40 行(19.2K)在 BLE 常驻后会使内部堆紧张,
+// 24 行(11.5K)为 BLE+Wi-Fi 共存留出余量,代价仅是刷新分块更多、CPU 略增。
+#define BSP_LVGL_DRAW_BUFFER_LINES 24
 
 static lv_display_t *s_disp;
 static bool s_port_initialized;

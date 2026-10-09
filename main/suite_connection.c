@@ -3,6 +3,7 @@
 #include "suite_storage.h"
 
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_sntp.h"
@@ -99,15 +100,29 @@ static void wifi_stack_up(void)
     if (!s_conn.netif) {
         esp_netif_config_t cfg = ESP_NETIF_DEFAULT_WIFI_STA();
         s_conn.netif = esp_netif_new(&cfg);
-        ESP_ERROR_CHECK(esp_netif_attach_wifi_station(s_conn.netif));
-        ESP_ERROR_CHECK(esp_wifi_set_default_wifi_sta_handlers());
+        if (!s_conn.netif ||
+            esp_netif_attach_wifi_station(s_conn.netif) != ESP_OK ||
+            esp_wifi_set_default_wifi_sta_handlers() != ESP_OK) {
+            ESP_LOGE(TAG, "netif 初始化失败");
+            return;
+        }
     }
     if (!s_conn.wifi_inited) {
         wifi_init_config_t wcfg = WIFI_INIT_CONFIG_DEFAULT();
-        ESP_ERROR_CHECK(esp_wifi_init(&wcfg));
+        // BLE+Wi-Fi 共存下内存紧张,NO_MEM 时保持离线比 abort 重启更有用。
+        if (esp_wifi_init(&wcfg) != ESP_OK) {
+            ESP_LOGE(TAG, "esp_wifi_init 失败(空闲堆 %lu,最大连续内部块 %lu)",
+                     (unsigned long)esp_get_free_heap_size(),
+                     (unsigned long)heap_caps_get_largest_free_block(
+                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+            return;
+        }
         s_conn.wifi_inited = true;
-        ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+        if (esp_wifi_set_storage(WIFI_STORAGE_RAM) != ESP_OK ||
+            esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK) {
+            ESP_LOGE(TAG, "Wi-Fi 模式设置失败");
+            return;
+        }
     }
     if (!s_conn.wifi_started) {
         ESP_ERROR_CHECK(esp_wifi_start());
@@ -136,6 +151,10 @@ static esp_err_t wifi_connect(void)
     wifi_config_t wcfg = { 0 };
     strlcpy((char *)wcfg.sta.ssid, cred.ssid, sizeof(wcfg.sta.ssid));
     strlcpy((char *)wcfg.sta.password, cred.password, sizeof(wcfg.sta.password));
+    // modem sleep 默认 listen interval=3(每 3 个 beacon 醒一次),
+    // BLE 共存+弱信号下 TLS 握手每轮往返都多等 ~300ms,10s 超时内
+    // 完不成握手。改为每 beacon 醒一次,只增加少量功耗。
+    wcfg.sta.listen_interval = 1;
     err = esp_wifi_set_config(WIFI_IF_STA, &wcfg);
     if (err != ESP_OK) return err;
     return esp_wifi_connect();
