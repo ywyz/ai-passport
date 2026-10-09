@@ -61,7 +61,7 @@ run_static_checks() {
             -o "${test_dir}/test_demo_${demo}_runtime"
         "${test_dir}/test_demo_${demo}_runtime"
     done
-    for suite in input clock conn_fsm weather_logic scene city_data; do
+    for suite in input clock conn_fsm weather_logic scene city_data prov_proto; do
         "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
             "tests/test_suite_${suite}.c" main/suite_"${suite}".c -lm \
             -o "${test_dir}/test_suite_${suite}"

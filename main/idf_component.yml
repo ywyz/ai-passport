@@ -1,0 +1,6 @@
+## IDF Component Manager 清单(需求10:配网页二维码生成)
+## 组件仓库经构建环境国内镜像拉取(IDF_COMPONENT_STORAGE_URL)。
+dependencies:
+  espressif/qrcode: "^0.1.0~2"
+  idf:
+    version: ">=5.0"

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <title>AI Passport 手机配网</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>AI Passport 配网</h1>
+    <div id="device-id" class="device-id"></div>
+  </header>
+
+  <!-- 浏览器/环境不支持时的提示(iOS Safari 无 Web Bluetooth) -->
+  <section id="unsupported" class="card hidden">
+    <h2>当前浏览器不支持</h2>
+    <p id="unsupported-reason"></p>
+    <p class="hint">请使用 Android 手机上的 Chrome 或 Edge(Chromium 内核)打开本页面,并确认地址为 https://。iOS 因系统限制不支持 Web Bluetooth。</p>
+  </section>
+
+  <main id="app">
+    <!-- 连接区 -->
+    <section id="connect-card" class="card">
+      <h2>1. 连接设备</h2>
+      <p class="hint">确认设备屏幕停留在“手机配网”页并显示二维码与 6 位配对码,然后点击下方按钮,在蓝牙列表中选择名称以 FoloPassport 开头的设备。</p>
+      <button id="btn-connect" class="primary">连接设备</button>
+      <p id="connect-msg" class="msg"></p>
+    </section>
+
+    <!-- 配对码弹层 -->
+    <section id="pin-card" class="card hidden">
+      <h2>2. 输入配对码</h2>
+      <p class="hint">请查看设备屏幕上显示的 6 位数字配对码。连续输错 3 次设备会主动断开。</p>
+      <input id="pin-input" class="pin-input" inputmode="numeric" maxlength="6" placeholder="6 位配对码" />
+      <button id="btn-hello" class="primary">确认配对</button>
+      <p id="pin-msg" class="msg"></p>
+    </section>
+
+    <!-- 仪表盘 -->
+    <div id="dashboard" class="hidden">
+      <!-- 设备状态卡 -->
+      <section class="card">
+        <h2>设备状态</h2>
+        <table class="kv">
+          <tr><td>Wi-Fi</td><td id="st-wifi" class="val">-</td></tr>
+          <tr><td>SSID</td><td id="st-ssid" class="val">-</td></tr>
+          <tr><td>IP 地址</td><td id="st-ip" class="val">-</td></tr>
+          <tr><td>信号</td><td id="st-rssi" class="val">-</td></tr>
+          <tr><td>时间同步</td><td id="st-time" class="val">-</td></tr>
+          <tr><td>当前城市</td><td id="st-city" class="val">-</td></tr>
+        </table>
+      </section>
+
+      <!-- Wi-Fi 卡 -->
+      <section class="card">
+        <h2>3. Wi-Fi 网络</h2>
+        <button id="btn-scan">扫描网络</button>
+        <p id="scan-msg" class="msg"></p>
+        <ul id="net-list" class="net-list"></ul>
+        <label class="field hidden" id="pass-wrap">
+          <span id="pass-label">密码</span>
+          <input id="pass-input" type="password" autocomplete="off" placeholder="输入 Wi-Fi 密码" />
+        </label>
+        <button id="btn-wifi-save" class="primary hidden">保存并连接</button>
+        <p id="wifi-msg" class="msg"></p>
+      </section>
+
+      <!-- 城市卡 -->
+      <section class="card">
+        <h2>4. 所在城市</h2>
+        <label class="field">
+          <span>省份</span>
+          <select id="province-select"><option>加载中…</option></select>
+        </label>
+        <label class="field">
+          <span>城市</span>
+          <select id="city-select" disabled><option>请先选择省份</option></select>
+        </label>
+        <button id="btn-city-save" class="primary">保存城市</button>
+        <p id="city-msg" class="msg"></p>
+      </section>
+    </div>
+  </main>
+
+  <!-- 断开提示条 -->
+  <div id="disconnect-bar" class="disconnect-bar hidden">
+    <span>连接已断开</span>
+    <button id="btn-reconnect">重新连接</button>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

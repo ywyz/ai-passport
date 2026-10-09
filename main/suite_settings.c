@@ -6,6 +6,7 @@
 #include "suite_app.h"
 #include "suite_city_picker.h"
 #include "suite_pages.h"
+#include "suite_provision.h"
 #include "suite_storage.h"
 
 #include "bsp_display.h"
@@ -29,7 +30,8 @@
 
 #define ROW_CITY 0  // 选择城市(右侧显示当前生效城市)
 #define ROW_CONN 1  // 连接状态入口
-#define ROW_TOTAL 2
+#define ROW_PROV 2  // 手机扫码 BLE 配网入口(本需求新增;行右侧无值)
+#define ROW_TOTAL 3
 
 static lv_obj_t *s_scr;
 static lv_obj_t *s_rows[ROW_TOTAL];
@@ -93,6 +95,7 @@ static void settings_enter(void)
     lv_obj_align(s_cur_city, LV_ALIGN_RIGHT_MID, -14, 0);
 
     s_rows[ROW_CONN] = row_create(s_scr, "连接状态", ROW_CONN);
+    s_rows[ROW_PROV] = row_create(s_scr, "手机配网", ROW_PROV);
 
     lv_obj_t *hint = lv_label_create(s_scr);
     lv_obj_set_style_text_font(hint, &suite_font_16, 0);
@@ -126,7 +129,7 @@ static void on_settings_action(suite_action_t act)
         }
         break;
     case SUITE_ACTION_DOWN:
-        if (s_sel < ROW_CONN) {
+        if (s_sel < ROW_PROV) {
             s_sel++;
             if (bsp_lvgl_lock(200)) {
                 row_refresh();
@@ -137,6 +140,8 @@ static void on_settings_action(suite_action_t act)
     case SUITE_ACTION_OK:
         if (s_sel == ROW_CONN) {
             (void)suite_app_push(&SUITE_PAGE_STATUS);
+        } else if (s_sel == ROW_PROV) {
+            (void)suite_app_push(&SUITE_PAGE_PROVISION);
         } else {
             (void)suite_app_push(&SUITE_PAGE_PROVINCE);
         }

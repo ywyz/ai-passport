@@ -10,6 +10,7 @@
 #include "suite_app.h"
 #include "suite_connection.h"
 #include "suite_home.h"
+#include "suite_prov_ble.h"
 #include "suite_weather.h"
 
 static const char *TAG = "main";
@@ -41,6 +42,12 @@ void app_main(void)
         ESP_LOGW(TAG, "连接管理启动失败,首页将显示离线");
     }
     (void)suite_weather_start();
+
+    // NimBLE 配网 host 启动时常驻,但只在"手机配网"页打开时才广播。
+    // 非致命:失败时配网页会提示,其它功能不受影响。
+    if (suite_prov_ble_init() != ESP_OK) {
+        ESP_LOGW(TAG, "BLE 配网服务初始化失败,手机配网不可用");
+    }
 
     if (!suite_app_start(&SUITE_PAGE_HOME)) {
         ESP_LOGE(TAG, "首页进入失败");

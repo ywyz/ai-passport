@@ -34,6 +34,7 @@ typedef struct {
     bool wifi_inited;
     bool wifi_started;
     bool running;
+    uint8_t ignore_lost;  // 应用新凭据期间需要吞掉的旧链路迟到 DISCONNECTED 数
 } conn_ctx_t;
 
 static conn_ctx_t s_conn;
@@ -43,18 +44,25 @@ static const char *const k_ntp_hosts[CONN_NTP_SERVERS] = {
 };
 
 // esp_event 回调 → 事件队列(满则丢弃并计数,保证回调轻量)。
-typedef enum {
+enum {
     Q_WIFI_STARTED = SUITE_CONN_EV_WIFI_STARTED,
     Q_ASSOC_FAIL = SUITE_CONN_EV_ASSOC_FAIL,
     Q_GOT_IP = SUITE_CONN_EV_GOT_IP,
     Q_LOST = SUITE_CONN_EV_LOST,
     Q_STOP = SUITE_CONN_EV_STOP,
+    Q_APPLY_NEW = SUITE_CONN_EV_APPLY_NEW,
     Q_RETRY_NOW = 100,   // 显式取值,避免与隐式续排的事件值冲突
+};
+
+typedef struct {
+    uint8_t type;
+    uint16_t reason;     // Q_LOST 时携带 wifi disconnect reason
 } queue_ev_t;
 
-static void post_ev(queue_ev_t ev)
+static void post_ev(uint8_t type, uint16_t reason)
 {
     if (!s_conn.queue) return;
+    queue_ev_t ev = { .type = type, .reason = reason };
     (void)xQueueSend(s_conn.queue, &ev, 0);
 }
 
@@ -136,14 +144,17 @@ static esp_err_t wifi_connect(void)
 // 事件回调:esp_event 任务上下文,只入队。
 static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
-    (void)arg; (void)base; (void)data;
+    (void)arg; (void)base;
     switch (id) {
     case WIFI_EVENT_STA_START:
-        post_ev(Q_WIFI_STARTED);
+        post_ev(Q_WIFI_STARTED, 0);
         break;
-    case WIFI_EVENT_STA_DISCONNECTED:
-        post_ev(Q_LOST);
+    case WIFI_EVENT_STA_DISCONNECTED: {
+        // 捕获 reason 供配网页区分密码错误(15)/找不到 AP(200/201)等。
+        const wifi_event_sta_disconnected_t *d = data;
+        post_ev(Q_LOST, d ? d->reason : 0);
         break;
+    }
     default:
         break;
     }
@@ -152,7 +163,7 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *da
 static void on_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg; (void)base; (void)data;
-    if (id == IP_EVENT_STA_GOT_IP) post_ev(Q_GOT_IP);
+    if (id == IP_EVENT_STA_GOT_IP) post_ev(Q_GOT_IP, 0);
 }
 
 static void conn_task(void *arg)
@@ -173,10 +184,11 @@ static void conn_task(void *arg)
             timeout = (deadline > now) ? (deadline - now) : 0;
         }
         if (xQueueReceive(s_conn.queue, &ev, timeout) != pdTRUE) {
-            ev = Q_RETRY_NOW;  // 退避到期
+            ev.type = Q_RETRY_NOW;  // 退避到期
+            ev.reason = 0;
         }
 
-        switch (ev) {
+        switch (ev.type) {
         case Q_STOP:
             suite_conn_step(&s_conn.fsm, SUITE_CONN_EV_STOP);
             wifi_stack_down();
@@ -193,7 +205,23 @@ static void conn_task(void *arg)
             }
             break;
 
+        case Q_APPLY_NEW:
+            // 手机下发了新凭据(NVS 已写好):断开/停止旧链路并重启 STA。
+            // 旧链路的迟到 DISCONNECTED 在重新 STA_START 前一律吞掉。
+            ESP_LOGI(TAG, "应用新 Wi-Fi 凭据,立即重新连接");
+            s_conn.ignore_lost = 2;  // disconnect+stop 最多产生两个迟到事件
+            sntp_stop();
+            esp_wifi_disconnect();
+            if (s_conn.wifi_started) {
+                esp_wifi_stop();
+                s_conn.wifi_started = false;
+            }
+            suite_conn_step(&s_conn.fsm, SUITE_CONN_EV_APPLY_NEW);
+            wifi_stack_up();  // → STA_START(清 ignore)→ wifi_connect
+            break;
+
         case Q_WIFI_STARTED:
+            s_conn.ignore_lost = 0;  // 此后的断开都属于新一次尝试
             suite_conn_step(&s_conn.fsm, SUITE_CONN_EV_WIFI_STARTED);
             if (wifi_connect() != ESP_OK) {
                 // 无凭据:留在 WAIT_IP 语义不对,退回重试等待,慢速轮询。
@@ -214,8 +242,13 @@ static void conn_task(void *arg)
             break;
 
         case Q_LOST:
+            if (s_conn.ignore_lost > 0) {
+                // 切换凭据过程中旧链路的残留事件:忽略,不退避。
+                s_conn.ignore_lost--;
+                break;
+            }
             sntp_stop();
-            suite_conn_step(&s_conn.fsm, SUITE_CONN_EV_LOST);
+            suite_conn_step_lost(&s_conn.fsm, ev.reason);
             esp_wifi_connect();  // 立即发起;失败会再走 DISCONNECTED→退避
             break;
 
@@ -227,7 +260,8 @@ static void conn_task(void *arg)
         if (s_conn.fsm.state == SUITE_CONN_RETRY_WAIT) {
             wait_ms = suite_conn_backoff_ms(s_conn.fsm.retry_count);
             deadline = xTaskGetTickCount() + pdMS_TO_TICKS(wait_ms);
-            ESP_LOGW(TAG, "连接失败,退避 %lu ms 后重试(第 %lu 次)",
+            ESP_LOGW(TAG, "连接失败(reason=%u),退避 %lu ms 后重试(第 %lu 次)",
+                     (unsigned)s_conn.fsm.last_reason,
                      (unsigned long)wait_ms, (unsigned long)s_conn.fsm.retry_count);
         }
     }
@@ -290,7 +324,7 @@ esp_err_t suite_connection_start(void)
 
 void suite_connection_stop(void)
 {
-    if (s_conn.task && s_conn.running) post_ev(Q_STOP);
+    if (s_conn.task && s_conn.running) post_ev(Q_STOP, 0);
 }
 
 suite_conn_state_t suite_connection_state(void)
@@ -310,5 +344,36 @@ const suite_time_tracker_t *suite_connection_time(void)
 
 void suite_connection_reconnect_now(void)
 {
-    post_ev(Q_RETRY_NOW);
+    post_ev(Q_RETRY_NOW, 0);
+}
+
+esp_err_t suite_connection_apply_new_wifi(void)
+{
+    if (!s_conn.task || !s_conn.running) return ESP_ERR_INVALID_STATE;
+    post_ev(Q_APPLY_NEW, 0);
+    return ESP_OK;
+}
+
+uint16_t suite_connection_last_reason(void)
+{
+    return s_conn.fsm.last_reason;
+}
+
+bool suite_connection_ip_str(char *out, size_t cap)
+{
+    if (!out || cap < 16 || !s_conn.netif) return false;
+    esp_netif_ip_info_t ip;
+    if (esp_netif_get_ip_info(s_conn.netif, &ip) != ESP_OK) return false;
+    if (ip.ip.addr == 0) return false;  // 尚未拿到 DHCP 地址
+    snprintf(out, cap, IPSTR, IP2STR(&ip.ip));
+    return true;
+}
+
+bool suite_connection_ap_rssi(int *rssi_out)
+{
+    if (!rssi_out || !s_conn.wifi_started) return false;
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) return false;
+    *rssi_out = ap.rssi;
+    return true;
 }

@@ -7,6 +7,7 @@ void suite_conn_init(suite_conn_machine_t *m)
 {
     m->state = SUITE_CONN_OFF;
     m->retry_count = 0;
+    m->last_reason = 0;
 }
 
 uint32_t suite_conn_backoff_ms(uint32_t retry_count)
@@ -18,8 +19,23 @@ uint32_t suite_conn_backoff_ms(uint32_t retry_count)
     return ms > SUITE_CONN_BACKOFF_MAX_MS ? SUITE_CONN_BACKOFF_MAX_MS : ms;
 }
 
+void suite_conn_step_lost(suite_conn_machine_t *m, uint16_t reason)
+{
+    m->last_reason = reason;
+    suite_conn_step(m, SUITE_CONN_EV_LOST);
+}
+
 void suite_conn_step(suite_conn_machine_t *m, suite_conn_event_t ev)
 {
+    // 新凭据立即应用:任何状态都回到 CONNECTING 并清零失败计数与原因。
+    // 设备层在此事件中断开/停止旧链路,再以新凭据重新启动连接。
+    if (ev == SUITE_CONN_EV_APPLY_NEW) {
+        m->state = SUITE_CONN_CONNECTING;
+        m->retry_count = 0;
+        m->last_reason = 0;
+        return;
+    }
+
     switch (m->state) {
     case SUITE_CONN_OFF:
         if (ev == SUITE_CONN_EV_START) {
@@ -30,11 +46,13 @@ void suite_conn_step(suite_conn_machine_t *m, suite_conn_event_t ev)
     case SUITE_CONN_CONNECTING:
         if (ev == SUITE_CONN_EV_WIFI_STARTED) {
             m->state = SUITE_CONN_WAIT_IP;
-        } else if (ev == SUITE_CONN_EV_ASSOC_FAIL) {
+        } else if (ev == SUITE_CONN_EV_ASSOC_FAIL || ev == SUITE_CONN_EV_LOST) {
+            // DISCONNECTED 可能早于 STA_STARTED 到达,与 ASSOC_FAIL 同处理。
             m->retry_count += 1;
             m->state = SUITE_CONN_RETRY_WAIT;
         } else if (ev == SUITE_CONN_EV_STOP) {
             m->retry_count = 0;
+            m->last_reason = 0;
             m->state = SUITE_CONN_OFF;
         }
         break;
@@ -42,12 +60,14 @@ void suite_conn_step(suite_conn_machine_t *m, suite_conn_event_t ev)
     case SUITE_CONN_WAIT_IP:
         if (ev == SUITE_CONN_EV_GOT_IP) {
             m->retry_count = 0;
+            m->last_reason = 0;
             m->state = SUITE_CONN_ONLINE;
         } else if (ev == SUITE_CONN_EV_LOST) {
             m->retry_count += 1;
             m->state = SUITE_CONN_RETRY_WAIT;
         } else if (ev == SUITE_CONN_EV_STOP) {
             m->retry_count = 0;
+            m->last_reason = 0;
             m->state = SUITE_CONN_OFF;
         }
         break;
@@ -58,6 +78,7 @@ void suite_conn_step(suite_conn_machine_t *m, suite_conn_event_t ev)
             m->state = SUITE_CONN_RETRY_WAIT;
         } else if (ev == SUITE_CONN_EV_STOP) {
             m->retry_count = 0;
+            m->last_reason = 0;
             m->state = SUITE_CONN_OFF;
         }
         break;
@@ -65,6 +86,7 @@ void suite_conn_step(suite_conn_machine_t *m, suite_conn_event_t ev)
     case SUITE_CONN_RETRY_WAIT:
         if (ev == SUITE_CONN_EV_STOP) {
             m->retry_count = 0;
+            m->last_reason = 0;
             m->state = SUITE_CONN_OFF;
         } else if (ev == SUITE_CONN_EV_START) {
             // 退避计时器到期重试。

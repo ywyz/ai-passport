@@ -25,3 +25,17 @@ const suite_time_tracker_t *suite_connection_time(void);
 
 // 手动触发一次立即重连(状态页 OK 键)。在线时等效无操作。
 void suite_connection_reconnect_now(void);
+
+// 新凭据已写入 NVS 后调用:断开并停止旧链路,再以新凭据立即重新连接。
+// 与 reconnect_now 不同,任何 FSM 状态(含退避/在线)都立即生效。
+// 连接任务未启动时返回 ESP_ERR_INVALID_STATE。
+esp_err_t suite_connection_apply_new_wifi(void);
+
+// 最近一次断开原因(wifi_event_sta_disconnected_t.reason 数值;0=无)。
+uint16_t suite_connection_last_reason(void);
+
+// 当前 STA IPv4 字符串(如 "192.168.1.23");未拿到 IP 返回 false。
+bool suite_connection_ip_str(char *out, size_t cap);
+
+// 当前关联 AP 的 RSSI(dBm);未关联返回 false。
+bool suite_connection_ap_rssi(int *rssi_out);

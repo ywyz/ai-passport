@@ -35,6 +35,41 @@ int main(void) {
     suite_conn_step(&m, SUITE_CONN_EV_STOP);
     assert(m.state == SUITE_CONN_OFF && m.retry_count == 0);
 
+    // 新凭据立即应用:退避态/在线态/连接态都立即回到 CONNECTING 且清零计数。
+    suite_conn_step(&m, SUITE_CONN_EV_APPLY_NEW);
+    assert(m.state == SUITE_CONN_CONNECTING && m.retry_count == 0);
+    suite_conn_step(&m, SUITE_CONN_EV_WIFI_STARTED);
+    suite_conn_step(&m, SUITE_CONN_EV_GOT_IP);
+    assert(m.state == SUITE_CONN_ONLINE);
+    suite_conn_step(&m, SUITE_CONN_EV_APPLY_NEW);
+    assert(m.state == SUITE_CONN_CONNECTING && m.retry_count == 0);
+    suite_conn_step(&m, SUITE_CONN_EV_APPLY_NEW);
+    assert(m.state == SUITE_CONN_CONNECTING && m.retry_count == 0);
+
+    // 断开原因:step_lost 记录原因并进入退避;GOT_IP 后原因清零。
+    assert(m.last_reason == 0);
+    suite_conn_step_lost(&m, 15);  // 常见于密码错误
+    assert(m.state == SUITE_CONN_RETRY_WAIT && m.last_reason == 15);
+    suite_conn_step(&m, SUITE_CONN_EV_START);
+    suite_conn_step(&m, SUITE_CONN_EV_WIFI_STARTED);
+    // 未拿到 IP 前再次失败,原因保留供配网页展示。
+    suite_conn_step_lost(&m, 201);  // 找不到 AP
+    assert(m.state == SUITE_CONN_RETRY_WAIT && m.last_reason == 201);
+    suite_conn_step(&m, SUITE_CONN_EV_START);
+    suite_conn_step(&m, SUITE_CONN_EV_WIFI_STARTED);
+    suite_conn_step(&m, SUITE_CONN_EV_GOT_IP);
+    assert(m.state == SUITE_CONN_ONLINE && m.last_reason == 0);
+
+    // APPLY_NEW 也清掉历史原因。
+    suite_conn_step_lost(&m, 200);
+    assert(m.last_reason == 200);
+    suite_conn_step(&m, SUITE_CONN_EV_APPLY_NEW);
+    assert(m.state == SUITE_CONN_CONNECTING && m.last_reason == 0);
+
+    // 停止:清零回到 OFF(保留 NVS 配置由设备层负责)。
+    suite_conn_step(&m, SUITE_CONN_EV_STOP);
+    assert(m.state == SUITE_CONN_OFF && m.retry_count == 0 && m.last_reason == 0);
+
     // 退避序列:1s,2s,4s,...封顶 60s。
     assert(suite_conn_backoff_ms(0) == 1000);
     assert(suite_conn_backoff_ms(1) == 2000);
