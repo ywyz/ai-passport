@@ -67,6 +67,12 @@ run_static_checks() {
             -o "${test_dir}/test_suite_${suite}"
         "${test_dir}/test_suite_${suite}"
     done
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
+        -Itests/weather_stubs -Imain \
+        tests/test_suite_weather_runtime.c \
+        main/suite_weather_logic.c main/suite_clock.c -lm \
+        -o "${test_dir}/test_suite_weather_runtime"
+    "${test_dir}/test_suite_weather_runtime"
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_deep_sleep_contract.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_check_repo.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_suite_font_charset.py

@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 bool suite_wx_build_url(char *url, size_t cap, double lat, double lon)
 {
@@ -143,4 +144,40 @@ bool suite_wx_is_fresh(int64_t fetched_epoch, int64_t now_epoch)
 {
     if (fetched_epoch <= 0) return false;
     return (now_epoch - fetched_epoch) < SUITE_WX_FRESH_WINDOW_S;
+}
+
+void suite_wx_body_reset(suite_wx_body_t *body)
+{
+    if (!body || !body->buf || body->cap == 0) return;
+    body->len = 0;
+    body->overflow = false;
+    body->buf[0] = '\0';
+}
+
+void suite_wx_body_append(suite_wx_body_t *body, const void *data, size_t len)
+{
+    if (!body || !body->buf || body->cap == 0) return;
+    if (body->overflow || !data || len == 0) return;
+
+    // 终止符永远占一个字节:可用空间是 cap-1-len。
+    size_t room = body->cap - 1 - body->len;
+    if (len > room) {
+        // 一旦超限整次响应作废:不写入截断内容,调用方也不会拿到可解析文本。
+        body->overflow = true;
+        return;
+    }
+    memcpy(body->buf + body->len, data, len);
+    body->len += len;
+    body->buf[body->len] = '\0';
+}
+
+bool suite_wx_body_overflow(const suite_wx_body_t *body)
+{
+    return !body || body->overflow;
+}
+
+const char *suite_wx_body_text(const suite_wx_body_t *body)
+{
+    if (!body || !body->buf || body->overflow) return NULL;
+    return body->buf;
 }

@@ -31,7 +31,33 @@ suite_wx_group_t suite_wx_code_group(int wmo_code);
 bool suite_wx_extract_double(const char *json, const char *key, double *out);
 bool suite_wx_extract_int(const char *json, const char *key, long *out);
 
+// 响应体收集:按整次响应的累计长度判定上限,超限即整次作废——即使开头
+// 已经出现必需字段,也不从截断的 JSON 里"解析成功"。cap 含末尾 NUL 预留,
+// 因此单次响应最多接受 cap-1 字节数据。
+#define SUITE_WX_BODY_MAX 8192
+typedef struct {
+    char  *buf;       // 调用方缓冲,cap 字节
+    size_t cap;       // 总容量,含终止符预留
+    size_t len;       // 已收集字节数
+    bool   overflow;  // 本次响应已超限(内容不可再解析)
+} suite_wx_body_t;
+
+// 开始新一次响应收集:清空长度与超限标记(缓冲绑定由调用方在构造时给出)。
+void suite_wx_body_reset(suite_wx_body_t *body);
+
+// 追加一个响应分块。累计超过 cap-1 时置超限并丢弃本次全部内容;
+// 超限后到的分块不再计入。data/len 为 0 时忽略。
+void suite_wx_body_append(suite_wx_body_t *body, const void *data, size_t len);
+
+bool suite_wx_body_overflow(const suite_wx_body_t *body);
+
+// 返回 NUL 结尾的响应文本(可能为空串);超限或未绑定时返回 NULL。
+const char *suite_wx_body_text(const suite_wx_body_t *body);
+
 // 新鲜度:2 小时内的数据视为可用,超时为"过期"(独立提示,不静默丢弃)。
 #define SUITE_WX_FRESH_WINDOW_S ((int64_t)2 * 3600)
+// 刷新节奏:成功后 30 min 周期;失败后 60 s 重试;离线/未校时 2 s 复查。
 #define SUITE_WX_REFRESH_PERIOD_S ((int64_t)30 * 60)
+#define SUITE_WX_RETRY_PERIOD_S ((int64_t)60)
+#define SUITE_WX_PROBE_PERIOD_S ((int64_t)2)
 bool suite_wx_is_fresh(int64_t fetched_epoch, int64_t now_epoch);
