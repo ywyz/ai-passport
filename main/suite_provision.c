@@ -11,6 +11,7 @@
 
 #include "suite_prov_ble.h"
 #include "suite_prov_proto.h"
+#include "suite_provision_qr.h"
 
 #include "esp_log.h"
 #include "esp_random.h"
@@ -37,7 +38,8 @@ static const char *TAG = "suite_provision_ui";
 
 #define QR_SIZE 150
 #define QR_Y 30
-// I1 每行约 19 字节,按 4 字节对齐后 20;预留到 27,缓冲约 4KB 静态 BSS。
+// I1 每行 150 bit = 19 字节,预留到 27 覆盖对齐配置,缓冲约 4KB 静态 BSS;
+// 调色板(8B)位于缓冲开头,像素区容量在绘制时按实际 stride 再校验。
 #define QR_ROW_STRIDE_MAX 27
 
 static lv_obj_t *s_scr;
@@ -52,37 +54,39 @@ static char s_pin[SUITE_PROV_PIN_LEN + 1];
 
 // 二维码生成完成回调:把模块矩阵放大后直接写 I1 画布位图
 // (黑=索引1,白=索引0),避免逐像素 set_px 触发上万次重绘失效。
+static bool qr_canvas_module(const void *ctx, int x, int y)
+{
+    return esp_qrcode_get_module((esp_qrcode_handle_t)ctx, x, y);
+}
+
 static void paint_qr_to_canvas(esp_qrcode_handle_t qr)
 {
     if (!s_qr) return;
-    int mods = esp_qrcode_get_size(qr);
-    // 四周保留至少 4 个模块的静区,再取整数倍像素放大。
-    int scale = QR_SIZE / (mods + 8);
-    if (scale < 1) scale = 1;
-    int drawn = mods * scale;
-    int off = (QR_SIZE - drawn) / 2;
-
     lv_draw_buf_t *db = lv_canvas_get_draw_buf(s_qr);
-    if (!db || !db->data || db->header.stride > QR_ROW_STRIDE_MAX) {
-        ESP_LOGE(TAG, "二维码画布缓冲异常(stride=%u)",
-                 db ? db->header.stride : 0);
+    if (!db || !db->data || db->header.cf != LV_COLOR_FORMAT_I1 ||
+        db->header.stride == 0) {
+        ESP_LOGE(TAG, "二维码画布缓冲异常(cf=%u, stride=%u)",
+                 db ? (unsigned)db->header.cf : 0,
+                 db ? (unsigned)db->header.stride : 0);
         return;
     }
-    uint8_t *data = db->data;
-    uint32_t stride = db->header.stride;
-    memset(data, 0, stride * QR_SIZE);  // 整幅白(索引 0)
-    for (int my = 0; my < mods; my++) {
-        for (int mx = 0; mx < mods; mx++) {
-            if (!esp_qrcode_get_module(qr, mx, my)) continue;
-            for (int dy = 0; dy < scale; dy++) {
-                int py = off + my * scale + dy;
-                for (int dx = 0; dx < scale; dx++) {
-                    int px = off + mx * scale + dx;
-                    data[py * stride + (px >> 3)] |=
-                        (uint8_t)(0x80 >> (px & 0x07));
-                }
-            }
-        }
+    // I1 索引画布的调色板位于 draw_buf->data 开头(2 项 × 4 字节),像素区
+    // 在其后;必须用 goto_xy(0,0) 取像素起点。直接把 db->data 当像素起点会
+    // 在清零时覆盖调色板,并把整幅像素写入偏移 8 字节。
+    uint8_t *pixels = lv_draw_buf_goto_xy(db, 0, 0);
+    if (!pixels) {
+        ESP_LOGE(TAG, "二维码像素区不可用");
+        return;
+    }
+
+    int mods = esp_qrcode_get_size(qr);
+    suite_qr_layout_t layout;
+    if (!suite_qr_layout_calc(mods, QR_SIZE, &layout) ||
+        !suite_qr_paint_i1(pixels,
+                           sizeof(s_qr_buf) - SUITE_QR_I1_PALETTE_BYTES,
+                           db->header.stride, &layout, qr_canvas_module, qr)) {
+        ESP_LOGE(TAG, "二维码绘制越界或画布容量不足(模块 %d)", mods);
+        return;
     }
     lv_obj_invalidate(s_qr);
     s_qr_ready = true;

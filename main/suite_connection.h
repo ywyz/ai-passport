@@ -35,6 +35,7 @@ esp_err_t suite_connection_apply_new_wifi(void);
 uint16_t suite_connection_last_reason(void);
 
 // 当前 STA IPv4 字符串(如 "192.168.1.23");未拿到 IP 返回 false。
+// 内部与 netif 销毁互斥,任意任务可安全调用,不会访问已释放接口。
 bool suite_connection_ip_str(char *out, size_t cap);
 
 // 当前关联 AP 的 RSSI(dBm);未关联返回 false。

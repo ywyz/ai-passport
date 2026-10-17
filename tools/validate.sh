@@ -61,18 +61,63 @@ run_static_checks() {
             -o "${test_dir}/test_demo_${demo}_runtime"
         "${test_dir}/test_demo_${demo}_runtime"
     done
-    for suite in input clock conn_fsm weather_logic scene city_data prov_proto; do
+    for suite in input clock conn_fsm weather_logic scene city_data prov_proto \
+                 provision_qr; do
         "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
             "tests/test_suite_${suite}.c" main/suite_"${suite}".c -lm \
             -o "${test_dir}/test_suite_${suite}"
         "${test_dir}/test_suite_${suite}"
     done
-    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
-        -Itests/weather_stubs -Imain \
-        tests/test_suite_weather_runtime.c \
-        main/suite_weather_logic.c main/suite_clock.c -lm \
-        -o "${test_dir}/test_suite_weather_runtime"
-    "${test_dir}/test_suite_weather_runtime"
+    # 天气运行时测试用真实线程(-pthread);默认与 -O2 都必须通过,
+    # 防止回到跨失效栈帧的 longjmp 类未定义行为(只在 -O2 暴露)。
+    # 同轮编译天气任务桩的调用线程身份回归:主线程的有界超时取用不得被
+    # 误判为任务停靠。
+    for opt in default o2; do
+        opt_flags=""
+        if [[ "${opt}" == "o2" ]]; then
+            opt_flags="-O2"
+        fi
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} -pthread \
+            -Itests/weather_stubs -Imain \
+            tests/test_suite_weather_runtime.c \
+            main/suite_weather_logic.c main/suite_clock.c -lm \
+            -o "${test_dir}/test_suite_weather_runtime_${opt}"
+        "${test_dir}/test_suite_weather_runtime_${opt}"
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} -pthread \
+            -Itests/weather_stubs \
+            tests/test_suite_weather_sem_context.c \
+            -o "${test_dir}/test_suite_weather_sem_context_${opt}"
+        "${test_dir}/test_suite_weather_sem_context_${opt}"
+    done
+    # 连接任务与配网 BLE 运行时:线程化 RTOS 桩 + 网络栈逐步故障注入、
+    # 独立 host 线程与提交闸门交错;默认与 -O2 都必须通过(锁语义与
+    # 顺序断言不依赖优化级别)。
+    for opt in default o2; do
+        opt_flags=""
+        if [[ "${opt}" == "o2" ]]; then
+            opt_flags="-O2"
+        fi
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} -pthread \
+            -Itests/conn_stubs -Imain \
+            tests/test_suite_connection_runtime.c \
+            main/suite_conn_fsm.c main/suite_clock.c -lm \
+            -o "${test_dir}/test_suite_connection_runtime_${opt}"
+        "${test_dir}/test_suite_connection_runtime_${opt}"
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} -pthread \
+            -Itests/ble_stubs -Imain \
+            tests/test_suite_prov_ble_runtime.c \
+            main/suite_prov_proto.c main/suite_clock.c -lm \
+            -o "${test_dir}/test_suite_prov_ble_runtime_${opt}"
+        "${test_dir}/test_suite_prov_ble_runtime_${opt}"
+    done
+    # 配网页契约:用 Node 运行 provisioning/web/app.js 的真实处理逻辑,
+    # 覆盖扫描应答渲染、选择/提交凭据、空列表/错误呈现与省市应答。
+    node_bin="${NODE_BIN:-$(command -v node || command -v node.exe || true)}"
+    if [[ -z "${node_bin}" ]]; then
+        echo "ERROR: node is required for the provisioning web contract tests." >&2
+        exit 1
+    fi
+    "${node_bin}" tests/test_prov_web_contract.mjs
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_deep_sleep_contract.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_check_repo.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_suite_font_charset.py

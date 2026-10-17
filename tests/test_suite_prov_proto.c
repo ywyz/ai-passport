@@ -1,6 +1,7 @@
 // tests/test_suite_prov_proto.c —— 配网分包帧协议主机测试。
 // 覆盖:单包/多包切帧与重组、重复 seq、乱序、无 START 的中间包、
-// 半条超时清空、超长拒绝、配对码错误计数与锁定。
+// 半条超时清空、超长拒绝、配对码错误计数与锁定,以及连接会话状态
+// (状态通知授权门、订阅/授权不跨连接继承、MTU 重连复位与分片重组)。
 #include <assert.h>
 #include <string.h>
 
@@ -243,6 +244,110 @@ static void test_pin_verify(void)
     assert(!suite_prov_pin_authed(&p) && p.fails == 0);
 }
 
+// 状态通知授权门:订阅但未认证、错误/正确配对码、断连重连不继承授权。
+static void test_session_status_gate(void)
+{
+    suite_prov_session_t s;
+    suite_prov_session_init(&s);
+    assert(s.conn == SUITE_PROV_CONN_NONE && !s.subscribed &&
+           s.mtu == SUITE_PROV_MTU_DEFAULT);
+    assert(!suite_prov_session_status_allowed(&s));
+
+    // 连接但未认证:即使订阅也不得推送状态(城市坐标/SSID/IP)。
+    suite_prov_session_connect(&s, 0, "135790");
+    suite_prov_session_subscribe(&s, true);
+    assert(s.subscribed && !suite_prov_session_authorized(&s));
+    assert(!suite_prov_session_status_allowed(&s));
+
+    // 错误配对码:仍无授权、无状态。
+    assert(suite_prov_pin_verify(&s.pin, "000000", 6) == SUITE_PROV_PIN_BAD);
+    assert(suite_prov_pin_verify(&s.pin, "111111", 6) == SUITE_PROV_PIN_BAD);
+    assert(!suite_prov_session_status_allowed(&s));
+
+    // 正确配对码:命令与状态推送同时解锁。
+    assert(suite_prov_pin_verify(&s.pin, "135790", 6) == SUITE_PROV_PIN_OK);
+    assert(suite_prov_session_authorized(&s));
+    assert(suite_prov_session_status_allowed(&s));
+
+    // 断开后未认证、未订阅;同一句柄重连不继承之前的授权,
+    // 订阅后仍需重新 hello 才能推送状态。
+    suite_prov_session_disconnect(&s, 0);
+    assert(s.conn == SUITE_PROV_CONN_NONE && !s.subscribed);
+    assert(!suite_prov_session_status_allowed(&s));
+    suite_prov_session_connect(&s, 0, "246802");
+    assert(!suite_prov_session_status_allowed(&s));
+    suite_prov_session_subscribe(&s, true);
+    assert(!suite_prov_session_status_allowed(&s));
+    assert(suite_prov_pin_verify(&s.pin, "246802", 6) == SUITE_PROV_PIN_OK);
+    assert(suite_prov_session_status_allowed(&s));
+
+    // 旧连接的迟到断开事件不得影响当前已授权的连接。
+    suite_prov_session_disconnect(&s, 5);
+    assert(s.conn == 0 && suite_prov_session_status_allowed(&s));
+    // 退订则停止推送。
+    suite_prov_session_subscribe(&s, false);
+    assert(!suite_prov_session_status_allowed(&s));
+}
+
+// MTU 会话隔离与"247 → 断开 → 23 重连"分包:帧长合法、JSON 完整可重组。
+static void test_session_mtu_reconnect_and_framing(void)
+{
+    suite_prov_session_t s;
+    suite_prov_session_init(&s);
+
+    // 正常大 MTU 连接:247 生效;旧连接迟到事件与非法值被拒绝。
+    suite_prov_session_connect(&s, 0, "135790");
+    assert(suite_prov_session_set_mtu(&s, 0, 247) && s.mtu == 247);
+    assert(!suite_prov_session_set_mtu(&s, 1, 200) && s.mtu == 247);
+    assert(!suite_prov_session_set_mtu(&s, 0, SUITE_PROV_MTU_DEFAULT - 1));
+    assert(!suite_prov_session_set_mtu(NULL, 0, 247));
+
+    // 247 → 断开 → 23 重连:新连接未协商前恢复默认,不继承旧值。
+    suite_prov_session_disconnect(&s, 0);
+    assert(s.mtu == SUITE_PROV_MTU_DEFAULT);
+    assert(!suite_prov_session_set_mtu(&s, 0, 247));  // 无连接:拒绝
+    suite_prov_session_connect(&s, 0, "135790");
+    assert(s.mtu == SUITE_PROV_MTU_DEFAULT);
+
+    static const char k_status_json[] =
+        "{\"ev\":\"status\",\"data\":{\"wifi\":\"online\",\"ssid\":\"ab***\","
+        "\"ip\":\"192.168.1.23\",\"rssi\":-55,\"time_synced\":true,"
+        "\"city\":{\"n\":\"Beijing\",\"la\":395427,\"lo\":1163916}}}";
+    const size_t msg_len = sizeof(k_status_json) - 1;
+    uint8_t frame[SUITE_PROV_PAYLOAD_MAX + SUITE_PROV_HEADER_LEN];
+    suite_prov_reasm_t r;
+    const uint8_t *out = NULL;
+    size_t out_len = 0;
+
+    // 小 MTU(23,净荷 18):多帧;大 MTU(247,净荷 242):少帧。
+    // 两种情况都要求每帧 ≤ MTU-3(ATT 头)且重组结果与原文逐字节一致。
+    for (int big = 0; big <= 1; big++) {
+        if (big) assert(suite_prov_session_set_mtu(&s, 0, 247) && s.mtu == 247);
+        size_t payload = (size_t)s.mtu - 3 - SUITE_PROV_HEADER_LEN;
+        assert(payload == (big ? (size_t)SUITE_PROV_PAYLOAD_MAX
+                               : (size_t)SUITE_PROV_PAYLOAD_MIN));
+        size_t frames = suite_prov_frame_count(msg_len, payload);
+        assert(frames >= 1 && (big || frames > 1));
+
+        suite_prov_reasm_init(&r, s_msg_buf, sizeof(s_msg_buf));
+        for (size_t i = 0; i < frames; i++) {
+            size_t flen = suite_prov_frame_build(
+                (const uint8_t *)k_status_json, msg_len, payload, i, frame,
+                sizeof(frame));
+            assert(flen > SUITE_PROV_HEADER_LEN);
+            assert(flen <= (size_t)s.mtu - 3);
+            int ret = suite_prov_reasm_feed(&r, frame, flen,
+                                            (uint32_t)(i * 10), &out, &out_len);
+            if (i + 1 < frames) {
+                assert(ret == 0);
+            } else {
+                assert(ret == (int)msg_len && out_len == msg_len);
+                assert(memcmp(out, k_status_json, msg_len) == 0);
+            }
+        }
+    }
+}
+
 int main(void)
 {
     test_single_packet();
@@ -253,5 +358,7 @@ int main(void)
     test_oversize_message_rejected();
     test_frame_build_guardrails();
     test_pin_verify();
+    test_session_status_gate();
+    test_session_mtu_reconnect_and_framing();
     return 0;
 }

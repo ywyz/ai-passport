@@ -94,3 +94,42 @@ void suite_prov_pin_reset(suite_prov_pin_t *p);
 suite_prov_pin_result_t suite_prov_pin_verify(suite_prov_pin_t *p,
                                               const char *attempt, size_t len);
 bool suite_prov_pin_authed(const suite_prov_pin_t *p);
+
+// ---- 连接会话状态(纯逻辑) ----
+//
+// 每个 BLE 连接一个独立会话:订阅状态、协商 MTU 与配对码授权都必须随
+// 连接重建而重置 —— 上一次连接的授权与 MTU 绝不能被下一次连接继承。
+
+#define SUITE_PROV_CONN_NONE 0xFFFFu
+#define SUITE_PROV_MTU_DEFAULT 23u
+
+typedef struct {
+    uint16_t conn;         // 当前连接句柄;NONE 表示无连接
+    bool subscribed;       // 当前连接已订阅 TX 通知
+    uint16_t mtu;          // 当前连接协商的 ATT MTU(未协商为 DEFAULT)
+    suite_prov_pin_t pin;  // 当前连接的配对码授权状态
+} suite_prov_session_t;
+
+void suite_prov_session_init(suite_prov_session_t *s);
+
+// 新连接建立:登记句柄、清零订阅、恢复默认 MTU,并开始新一轮配对码
+// 会话(上一次连接的授权不继承)。
+void suite_prov_session_connect(suite_prov_session_t *s, uint16_t conn,
+                                const char expected_pin[SUITE_PROV_PIN_LEN]);
+
+// 断开:仅当句柄是当前连接时清理并恢复默认 MTU;旧连接的迟到断开事件
+// 不得影响正在使用的新连接。
+void suite_prov_session_disconnect(suite_prov_session_t *s, uint16_t conn);
+
+void suite_prov_session_subscribe(suite_prov_session_t *s, bool on);
+
+// 应用当前连接的 MTU 协商结果;句柄不是当前连接(旧连接迟到事件)或
+// 数值小于默认 ATT MTU 时拒绝。返回是否已应用。
+bool suite_prov_session_set_mtu(suite_prov_session_t *s, uint16_t conn,
+                                uint16_t mtu);
+
+// 主动状态通知的授权条件:已连接 + 已订阅 + 已通过配对码。
+bool suite_prov_session_status_allowed(const suite_prov_session_t *s);
+
+// 除 hello 外的命令都要求当前连接先通过配对码。
+bool suite_prov_session_authorized(const suite_prov_session_t *s);

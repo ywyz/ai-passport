@@ -62,13 +62,22 @@ Web Bluetooth 连接设备,完成 Wi-Fi 扫描与凭据保存、省市选择。
   `{"id":n,"cmd":"wifi_set","ssid":"…","pass":"…"}`、`provinces`、
   `{"id":n,"cmd":"cities","p":0}`、`{"id":n,"cmd":"city_set","p":9,"c":4}`。
 - 应答:`{"id":n,"ok":true,"data":{…}}` 或
-  `{"id":n,"ok":false,"err":"bad_pin|bad_arg|scan_busy|…"}`。
+  `{"id":n,"ok":false,"err":"bad_pin|bad_arg|scan_busy|scan_failed|…"}`。
 - 事件(无 id):
   `{"ev":"status","data":{"wifi":"idle|connecting|online|fail","ssid":"ab***","ip":"…","rssi":-55,"reason":15,"time_synced":true,"city":{"n":"…","la":298683,"lo":1215440}}}`。
 
-`wifi_scan` 最多返回 20 条同名去重后的网络
-(`{"nets":[{"ssid","rssi","sec"}]}`,`sec` 取 `WIFI_AUTH_*` 枚举序号)。
+`wifi_scan` 应答为
+`{"id":n,"ok":true,"data":{"nets":[{"ssid","rssi","sec"},…]}}`
+(最多 20 条同名去重后的网络;`sec` 取 `WIFI_AUTH_*` 枚举序号)。
 配对码连续错误 3 次,设备主动断开连接。
+
+授权与连接状态按 BLE 连接隔离:
+
+- 配对前只接受 `hello`;其它命令一律应答 `need_pin`,`status` 事件
+  (含每 500ms 的变化推送)只发给已完成 `hello` 的订阅会话。城市坐标、
+  SSID 掩码与本地 IP 不会暴露给未认证客户端。
+- 每次新 BLE 连接都从未认证、默认 ATT MTU(23)开始,必须重新执行
+  `hello`;上一连接的协商 MTU 不会被继承。
 
 ## 安全基线
 

@@ -70,6 +70,61 @@ int main(void) {
     suite_conn_step(&m, SUITE_CONN_EV_STOP);
     assert(m.state == SUITE_CONN_OFF && m.retry_count == 0 && m.last_reason == 0);
 
+    // 已启动栈上的重试不会再有 STA_START:GOT_IP 必须能从 CONNECTING
+    // 直接恢复在线,否则会永久停在 CONNECTING。
+    suite_conn_init(&m);
+    suite_conn_step(&m, SUITE_CONN_EV_START);
+    suite_conn_step(&m, SUITE_CONN_EV_GOT_IP);
+    assert(m.state == SUITE_CONN_ONLINE && m.retry_count == 0);
+
+    // 掉线后的立即重连在退避到期前成功:GOT_IP 从 RETRY_WAIT 恢复在线
+    // 并清除失败原因与计数。
+    suite_conn_step_lost(&m, 15);
+    assert(m.state == SUITE_CONN_RETRY_WAIT && m.retry_count == 1 &&
+           m.last_reason == 15);
+    suite_conn_step(&m, SUITE_CONN_EV_GOT_IP);
+    assert(m.state == SUITE_CONN_ONLINE && m.retry_count == 0 &&
+           m.last_reason == 0);
+
+    // 无凭据 / 连接请求直接失败:WAIT_IP + ASSOC_FAIL 必须退回退避等待,
+    // 不能停在 WAIT_IP 无限等待 GOT_IP。
+    suite_conn_init(&m);
+    suite_conn_step(&m, SUITE_CONN_EV_START);
+    suite_conn_step(&m, SUITE_CONN_EV_WIFI_STARTED);
+    assert(m.state == SUITE_CONN_WAIT_IP);
+    suite_conn_step(&m, SUITE_CONN_EV_ASSOC_FAIL);
+    assert(m.state == SUITE_CONN_RETRY_WAIT && m.retry_count == 1);
+    suite_conn_step(&m, SUITE_CONN_EV_START);
+    suite_conn_step(&m, SUITE_CONN_EV_WIFI_STARTED);
+    suite_conn_step(&m, SUITE_CONN_EV_GOT_IP);
+    assert(m.state == SUITE_CONN_ONLINE && m.retry_count == 0);
+
+    // Wi-Fi 栈初始化失败:进入可恢复的 RETRY_WAIT,而不是停在 CONNECTING
+    // 无限等待永远不会到来的启动事件;重试重新初始化并成功联网。
+    suite_conn_init(&m);
+    suite_conn_step(&m, SUITE_CONN_EV_START);
+    suite_conn_step(&m, SUITE_CONN_EV_INIT_FAIL);
+    assert(m.state == SUITE_CONN_RETRY_WAIT && m.retry_count == 1);
+    suite_conn_step(&m, SUITE_CONN_EV_START);  // 退避到期重试
+    assert(m.state == SUITE_CONN_CONNECTING);
+    suite_conn_step(&m, SUITE_CONN_EV_WIFI_STARTED);
+    suite_conn_step(&m, SUITE_CONN_EV_GOT_IP);
+    assert(m.state == SUITE_CONN_ONLINE && m.retry_count == 0);
+
+    // 连续初始化失败:计数累加;应用新凭据同样可以带 INIT_FAIL 重试。
+    suite_conn_step(&m, SUITE_CONN_EV_LOST);
+    suite_conn_step(&m, SUITE_CONN_EV_START);
+    suite_conn_step(&m, SUITE_CONN_EV_INIT_FAIL);
+    assert(m.state == SUITE_CONN_RETRY_WAIT && m.retry_count == 2);
+    suite_conn_step(&m, SUITE_CONN_EV_APPLY_NEW);
+    assert(m.state == SUITE_CONN_CONNECTING && m.retry_count == 0);
+    suite_conn_step(&m, SUITE_CONN_EV_INIT_FAIL);
+    assert(m.state == SUITE_CONN_RETRY_WAIT && m.retry_count == 1);
+    suite_conn_step(&m, SUITE_CONN_EV_START);
+    suite_conn_step(&m, SUITE_CONN_EV_WIFI_STARTED);
+    suite_conn_step(&m, SUITE_CONN_EV_GOT_IP);
+    assert(m.state == SUITE_CONN_ONLINE && m.retry_count == 0);
+
     // 退避序列:1s,2s,4s,...封顶 60s。
     assert(suite_conn_backoff_ms(0) == 1000);
     assert(suite_conn_backoff_ms(1) == 2000);

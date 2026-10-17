@@ -70,13 +70,24 @@ Messages (see firmware `main/suite_prov_ble.c` for the authoritative list):
   `{"id":n,"cmd":"wifi_set","ssid":"...","pass":"..."}`, `provinces`,
   `{"id":n,"cmd":"cities","p":0}`, `{"id":n,"cmd":"city_set","p":9,"c":4}`.
 - Replies: `{"id":n,"ok":true,"data":{...}}` or
-  `{"id":n,"ok":false,"err":"bad_pin|bad_arg|scan_busy|..."}`.
+  `{"id":n,"ok":false,"err":"bad_pin|bad_arg|scan_busy|scan_failed|..."}`.
 - Unsolicited event:
   `{"ev":"status","data":{"wifi":"idle|connecting|online|fail","ssid":"ab***","ip":"...","rssi":-55,"reason":15,"time_synced":true,"city":{"n":"...","la":298683,"lo":1215440}}}`.
 
-`wifi_scan` returns up to 20 deduplicated networks
-(`{"nets":[{"ssid","rssi","sec"}]}`, `sec` is the numeric `WIFI_AUTH_*`
-order). Wrong pairing code three times makes the device terminate the link.
+`wifi_scan` replies with `{"id":n,"ok":true,"data":{"nets":[{"ssid","rssi","sec"},...]}}`
+(up to 20 deduplicated networks; `sec` is the numeric `WIFI_AUTH_*` order).
+Wrong pairing code three times makes the device terminate the link.
+
+Authorization and connection state are per BLE connection:
+
+- Only `hello` is accepted before pairing. Every other command answers
+  `need_pin`, and `status` events (including the 500 ms change pushes) are sent
+  only to a subscribed session that has completed `hello`. City coordinates,
+  the masked SSID, and the local IP are therefore not exposed to an
+  unauthenticated client.
+- A new BLE connection starts unauthenticated and with the default ATT MTU
+  (23). It must run `hello` again, and the previously negotiated MTU is never
+  inherited.
 
 ## Security baseline
 

@@ -230,6 +230,7 @@ function deviceErrText(err) {
     case 'need_pin': return '请先完成配对码验证';
     case 'bad_arg': return '参数有误,请重试';
     case 'scan_busy': return '设备正在扫描,请稍候再试';
+    case 'scan_failed': return '设备读取扫描结果失败,请重试';
     case 'conn_busy': return '设备连接忙,请稍后重试';
     case 'storage': return '设备保存失败,请重试';
     case 'no_mem': return '设备内存不足,请退出页面重进';

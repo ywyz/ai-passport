@@ -163,3 +163,58 @@ bool suite_prov_pin_authed(const suite_prov_pin_t *p)
 {
     return p != NULL && p->authed;
 }
+
+// ---- 连接会话状态 ----
+
+void suite_prov_session_init(suite_prov_session_t *s)
+{
+    memset(s, 0, sizeof(*s));
+    s->conn = SUITE_PROV_CONN_NONE;
+    s->mtu = SUITE_PROV_MTU_DEFAULT;
+}
+
+void suite_prov_session_connect(suite_prov_session_t *s, uint16_t conn,
+                                const char expected_pin[SUITE_PROV_PIN_LEN])
+{
+    if (s == NULL) return;
+    memset(s, 0, sizeof(*s));  // 上一连接的授权/订阅/MTU 全部作废
+    s->conn = conn;
+    s->mtu = SUITE_PROV_MTU_DEFAULT;
+    suite_prov_pin_start(&s->pin, expected_pin);
+}
+
+void suite_prov_session_disconnect(suite_prov_session_t *s, uint16_t conn)
+{
+    if (s == NULL || s->conn != conn) return;
+    s->conn = SUITE_PROV_CONN_NONE;
+    s->subscribed = false;
+    s->mtu = SUITE_PROV_MTU_DEFAULT;
+    suite_prov_pin_reset(&s->pin);
+}
+
+void suite_prov_session_subscribe(suite_prov_session_t *s, bool on)
+{
+    if (s == NULL) return;
+    s->subscribed = on;
+}
+
+bool suite_prov_session_set_mtu(suite_prov_session_t *s, uint16_t conn,
+                                uint16_t mtu)
+{
+    if (s == NULL || s->conn != conn || mtu < SUITE_PROV_MTU_DEFAULT) {
+        return false;
+    }
+    s->mtu = mtu;
+    return true;
+}
+
+bool suite_prov_session_status_allowed(const suite_prov_session_t *s)
+{
+    return s != NULL && s->conn != SUITE_PROV_CONN_NONE && s->subscribed &&
+           suite_prov_pin_authed(&s->pin);
+}
+
+bool suite_prov_session_authorized(const suite_prov_session_t *s)
+{
+    return s != NULL && suite_prov_pin_authed(&s->pin);
+}

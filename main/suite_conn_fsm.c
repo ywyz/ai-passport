@@ -46,8 +46,18 @@ void suite_conn_step(suite_conn_machine_t *m, suite_conn_event_t ev)
     case SUITE_CONN_CONNECTING:
         if (ev == SUITE_CONN_EV_WIFI_STARTED) {
             m->state = SUITE_CONN_WAIT_IP;
-        } else if (ev == SUITE_CONN_EV_ASSOC_FAIL || ev == SUITE_CONN_EV_LOST) {
+        } else if (ev == SUITE_CONN_EV_GOT_IP) {
+            // 栈已启动时的重试不会再有 STA_START:关联/DHCP 成功后的
+            // GOT_IP 直接从 CONNECTING 进入在线,否则会永远停在连接态。
+            m->retry_count = 0;
+            m->last_reason = 0;
+            m->state = SUITE_CONN_ONLINE;
+        } else if (ev == SUITE_CONN_EV_ASSOC_FAIL ||
+                   ev == SUITE_CONN_EV_LOST ||
+                   ev == SUITE_CONN_EV_INIT_FAIL) {
             // DISCONNECTED 可能早于 STA_STARTED 到达,与 ASSOC_FAIL 同处理。
+            // 栈初始化失败同样进入退避等待:重试会重新执行初始化,而不会
+            // 停在 CONNECTING 无限等待永远不会到来的启动事件。
             m->retry_count += 1;
             m->state = SUITE_CONN_RETRY_WAIT;
         } else if (ev == SUITE_CONN_EV_STOP) {
@@ -62,6 +72,11 @@ void suite_conn_step(suite_conn_machine_t *m, suite_conn_event_t ev)
             m->retry_count = 0;
             m->last_reason = 0;
             m->state = SUITE_CONN_ONLINE;
+        } else if (ev == SUITE_CONN_EV_ASSOC_FAIL) {
+            // esp_wifi_connect() 直接失败(无凭据/参数错误):与掉线一样
+            // 进入退避重试,不能停在 WAIT_IP 无限等待 GOT_IP。
+            m->retry_count += 1;
+            m->state = SUITE_CONN_RETRY_WAIT;
         } else if (ev == SUITE_CONN_EV_LOST) {
             m->retry_count += 1;
             m->state = SUITE_CONN_RETRY_WAIT;
@@ -91,6 +106,12 @@ void suite_conn_step(suite_conn_machine_t *m, suite_conn_event_t ev)
         } else if (ev == SUITE_CONN_EV_START) {
             // 退避计时器到期重试。
             m->state = SUITE_CONN_CONNECTING;
+        } else if (ev == SUITE_CONN_EV_GOT_IP) {
+            // 掉线后的立即重连在退避到期前成功:直接恢复在线,
+            // 不等下一次退避计时再"重连"一个已经连上的接口。
+            m->retry_count = 0;
+            m->last_reason = 0;
+            m->state = SUITE_CONN_ONLINE;
         }
         break;
 

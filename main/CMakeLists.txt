@@ -11,6 +11,7 @@ idf_component_register(
          "suite_city_picker.c"
          "suite_settings.c"
          "suite_provision.c"
+         "suite_provision_qr.c"
          "suite_weather.c"
          "suite_weather_logic.c"
          "suite_scene.c"

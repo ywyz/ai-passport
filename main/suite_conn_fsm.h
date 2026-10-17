@@ -21,6 +21,7 @@ typedef enum {
     SUITE_CONN_EV_GOT_IP,        // STA 拿到 IP
     SUITE_CONN_EV_LOST,          // 掉线/丢 IP
     SUITE_CONN_EV_APPLY_NEW,     // 新 Wi-Fi 凭据已写入 NVS,任意状态立即重连
+    SUITE_CONN_EV_INIT_FAIL,     // Wi-Fi 栈初始化失败(资源已回滚,退避后重试)
 } suite_conn_event_t;
 
 typedef struct {
