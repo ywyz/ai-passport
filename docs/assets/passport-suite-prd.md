@@ -4,7 +4,7 @@
 
 ## 1 Authority, status and baseline
 
-Review date: 2026-10-05, Asia/Shanghai. Scope authority: [suite plan](passport-suite-plan.md). Protocol: [contract](passport-suite-contract.md). Work and acceptance: [stage prompts](passport-suite-prompts.md). This revision authorizes documentation only, with no firmware, website or server implementation.
+Design review date: 2026-10-05; status updated 2026-10-19, Asia/Shanghai. Scope authority and current implementation/acceptance: [suite plan](passport-suite-plan.md#0-current-implementation-and-acceptance). Protocol: [contract](passport-suite-contract.md). Work and acceptance: [stage prompts](passport-suite-prompts.md). The original review was documentation-only; later user-authorized implementation and the Nextcloud read-first increment supersede that historical authorization limit.
 
 Status notation throughout the three documents: **U** = user-confirmed requirement; **D** = design proposal requiring the stated review; **C** = implemented in the inspected baseline; **V** = not verified. U does not mean implemented; D does not mean approved. Unless explicitly marked C in the baseline table, all new suite behavior is D/V; scope and required outcomes are U/V. Numeric limits are proposed testable ceilings, not measured capacities.
 
@@ -12,7 +12,9 @@ Initial `git status --short --branch`: `main...origin/main`, with twelve pre-exi
 
 Historical travel documents and the old design review remain history: their D1-D9, acceptance numbers and storage/provisioning schemes are inactive. This PRD introduces independent SU requirements and SA acceptance IDs.
 
-## 2 Code-to-plan gap
+## 2 Historical code-to-plan gap (2026-10-05)
+
+This table records the original baseline, not today's feature status. Use the plan's current checkpoint for implemented behavior and observed evidence. In particular, optional Android Edge provisioning is accepted, while computer support and the stronger security/time proposals remain unverified.
 
 | Inspected source | C: current behavior | U/D: required addition | V: evidence still needed |
 | --- | --- | --- | --- |
@@ -29,6 +31,8 @@ Historical travel documents and the old design review remain history: their D1-D
 All BSP public headers (audio, battery, button, display, I2C and pins) were read. Reuse hardware APIs and isolated lifecycle logic, not entire demo branches. A renamed, recolored or copied hardware menu or `ui_pixel` visual shell fails SU-01.
 
 ## 3 Requirements and acceptance identity
+
+The C/V columns below retain the original design-baseline assessment; they are not a current implementation inventory. Requirement IDs and unmet outcomes remain applicable.
 
 | Requirement | U: confirmed outcome | D: proposed implementation | C | V / acceptance |
 | --- | --- | --- | --- | --- |
@@ -48,7 +52,7 @@ All BSP public headers (audio, battery, button, display, I2C and pins) were read
 | SU-14 | Resource bounds, durable saves and empty-server recovery | SC-10 budgets, journals and three persistence receipts | Default layout only | SA-20, SA-21 |
 | SU-15 | Complete gate, matching image/debug artifacts and authorized device handoff in future firmware stages | ST-06 integration and evidence ledger | Gate tooling exists | SA-22 |
 
-Cancelled entirely: quota, coding assistant control, guide, China check-ins, QQ Music, PPT remote, routes, narration, province packs, maps, stamps, achievements and associated entrances/models. They are not deferred features. No task creation; reopening a completed task remains decision Q-07, with no active control. No FIDO2/Passkey/U2F/password vault/SSH signing. No phone/SoftAP workflow. OCR, automatic language detection and translation history are not required deliverables; adding them requires a new scope decision.
+Cancelled entirely: quota, coding assistant control, guide, China check-ins, QQ Music, PPT remote, routes, narration, province packs, maps, stamps, achievements and associated entrances/models. They are not deferred features. No task creation; reopening a completed task remains decision Q-07, with no active control. No FIDO2/Passkey/U2F/password vault/SSH signing or SoftAP workflow. Optional phone-browser provisioning follows the current plan checkpoint. OCR, automatic language detection and translation history are not required deliverables; adding them requires a new scope decision.
 
 ## 4 New UI and universal input rules
 
@@ -105,4 +109,4 @@ Website D/V flow: login with independent recovery access; Connect invokes browse
 
 The page owner owns LVGL objects, scene timers, recording/playback job and view subscription. A background sync coordinator owns Wi-Fi reconnect, tickets/task caches, durable completion queue and weather refresh. Leaving a page cancels its audio job but does not cancel an already durably admitted task completion. Background services never hold raw LVGL pointers: publish models tagged with request ID/page generation to the UI owner; reject late callbacks after exit, including notifications arriving after cancel. Cross-task LVGL use takes `bsp_lvgl_lock()`; callbacks enqueue only. Each phase deadline and cache age is specified in SC-03/06/07/08/10.
 
-Before firmware work, review Q decisions in prompts. This design contains full translation and OTP detail now, irrespective of their later implementation order. This document's delivery is not feature completion or a device-test invitation; firmware has not changed.
+Before dependent firmware work, review Q decisions in prompts. Translation and OTP detailed designs do not depend on their later implementation order. The original document-only delivery did not establish feature completion; subsequent implementation and acceptance are recorded in the current plan checkpoint.

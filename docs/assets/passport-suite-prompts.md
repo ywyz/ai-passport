@@ -4,7 +4,9 @@
 
 ## 1 Execution boundary and common prompt
 
-Updated 2026-10-05, Asia/Shanghai. [Plan](passport-suite-plan.md) fixes scope; [PRD](passport-suite-prd.md) fixes SU outcomes/pages; [contract](passport-suite-contract.md) specifies SC proposals. U/D/C/V meanings follow the PRD. All stages below are D/V future work, not current authorization; C covers baseline APIs/tooling only. This round delivers the complete translation and OTP detailed design, not firmware. The old travel D1-D9, acceptance IDs and storage/provisioning instructions must not be run.
+Design dated 2026-10-05; status updated 2026-10-19, Asia/Shanghai. [Plan](passport-suite-plan.md#0-current-implementation-and-acceptance) records current scope, implementation and acceptance; [PRD](passport-suite-prd.md) fixes SU outcomes/pages; [contract](passport-suite-contract.md) specifies SC proposals. U/D/C/V meanings follow the PRD. The stages below retain the original design work order, not a claim that completed home/provisioning work is absent. The user authorized the scene/acceptance checkpoint and then a Nextcloud read-first increment; this does not accept all ST-01/ST-03 gates or authorize the whole suite. The old travel D1-D9, acceptance IDs and storage/provisioning instructions must not be run.
+
+Current sequencing: finish and push the scene fix and bilingual acceptance record, then implement task discovery/selection/read, device display, manual refresh and offline cache. Keep completion/offline retries/conflicts as the following increment. Q-05/07/11 still govern storage, actual Nextcloud compatibility and service integration. The user's normal-use choice ends the previous scripted device checklist; new firmware needs a separate exact-image flashing handoff.
 
 Prepend this to each newly authorized stage prompt:
 
@@ -192,7 +194,9 @@ All Q rows are D/V, no implied user approval. They do not reopen cancelled scope
 
 No implementation stage is fully ready merely because its prompt exists. Do not treat absent providers, unsupported browser BLE, physical-security weaknesses or insufficient storage as hidden assumptions. Review Q-02/04/05/10 early; OTP is not forced to the end.
 
-## 6 Current documentation validation
+## 6 Historical documentation validation (2026-10-05)
+
+This section records only the original design delivery. Current Build, Host tests, Device tests and Unverified results are maintained in the plan's implementation checkpoint.
 
 This round modifies documentation only. Run `./tools/validate.sh --static`, then independently check every new local link and matching SU/SC/ST/SA/Q identifiers, protocol fields and numeric limits between languages, including untracked documents. Record results below after execution. Existing host tests are baseline regressions; no suite firmware or real service tests were run. Build: NOT RUN. Device tests: NOT RUN (not applicable to this document-only change). No commit, push, deployment, flashing, erase or eFuse write; no real OTP seeds/service credentials.
 

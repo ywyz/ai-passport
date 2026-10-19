@@ -2,11 +2,38 @@
 
 # AI Passport Integrated Firmware Plan
 
-Updated: 2026-10-05, Asia/Shanghai. Status: scope revised to the user's latest requirements; technical proposals remain design drafts. Application implementation has not started.
+Updated: 2026-10-19, Asia/Shanghai. Status: home, weather, settings and browser BLE provisioning are implemented; the first daily-use acceptance subset is complete. Translation, OTP, wallet and tasks still open explicit development placeholders. The remaining technical proposals are not implemented merely because they appear below.
 
-The target is one firmware application with five features and an online management website accessed from a computer. The computer connects to the nearby device over Bluetooth; the device uses its own Wi-Fi for server and online-service access. Daily use does not require a phone, phone application, hotspot, or phone provisioning.
+The target is one firmware application with five features and an online management website. A nearby browser connects to the device over Bluetooth; the device uses its own Wi-Fi for online services. The user has accepted optional phone-browser provisioning, verified with Android Edge. The original computer-browser goal remains unverified. Daily operation after setup does not require a phone application or hotspot.
 
-The user determines scope and acceptance. Codex prepares requirements, architecture, reviews and validation; OpenCode codes authorized implementation stages. Engineering follows [AGENTS.md](../../AGENTS.md) and the [AI development guide](../development/ai-guide.md).
+The user determines scope and acceptance; the explicitly authorized coding agent implements, reviews and validates each increment. Engineering follows [AGENTS.md](../../AGENTS.md) and the [AI development guide](../development/ai-guide.md).
+
+## 0 Current implementation and acceptance
+
+This checkpoint supersedes blanket implementation-status statements in the 2026-10-05 design documents; their unmet requirements and decision gates still apply.
+
+| Area | Implemented behavior | Evidence and remaining boundary |
+| --- | --- | --- |
+| Home scene | Mutual softened gravity, finite-radius elastic contacts with swept collision detection, bounded speed/work, reflecting bounds and short trails | Host force/contact/grazing/recovery tests and deterministic 100,000-frame runs pass in default and optimized builds. Operator confirms suitable speed, rebound without solid-body penetration, legible Chinese and clock |
+| Navigation | New home, launcher, settings and long-press return | Two operator-observed menu/return rounds passed; provisioning entry was intentional |
+| Browser provisioning | Screen QR, NimBLE connection, six-digit application pairing code, Wi-Fi scan/save, city save | Android Edge operator checks passed through correct pairing, multiple scan results, connection/IP, city matching and weather display. One wrong code was rejected on the phone; the correct code then recovered in the same session |
+| Clock and weather | Network time, selected-city weather, separate model/state handling | Operator confirms synchronized correct date/time and displayed temperature/weather; exact operation durations were not supplied |
+| Security and persistence | Current BLE application-code check and NVS settings | This is not acceptance of the proposed authenticated encrypted SC-02 session, signed trusted time or OTP security. Saved-configuration recovery after restart remains unverified |
+| Translation, OTP, wallet, tasks | Explicit development placeholders in the launcher | No real service integration or business-feature acceptance yet |
+
+Acceptance firmware: application version `8ca9ded-dirty`, based on source commit `8ca9dedfaefa5ae626631f51df7971b355e50d22` plus the scene fix. The local content-addressed archive retains the matching images, ELF, MAP and manifest; binaries and private logs are not committed.
+
+- Full-image SHA-256: `abd506e4040d738f5d26d16728f8a38a4d3f1dacf98c0c9a8c16b58ff2a2f624`.
+- Matching ELF SHA-256: `da340763648f6ecda7c65ed4ec75bfe0067a048700e697bc1963b4cc4b45fa17`.
+- Captured source-inventory SHA-256: `9ee5786f08ac1751e3d5e9e243c4155211858f35de2bc743a1f3bc79c309df84`. This identifies the build snapshot, not subsequent documentation edits or a later rebuild.
+- Build: PASS; complete `./tools/validate.sh` with ESP-IDF 5.5.3 on 2026-10-18.
+- Host tests: PASS; complete gate includes scene, provisioning and connection regressions.
+- Device tests: PASS for the completed subset only: verified segmented flash/startup, scene, menu/return, QR/BLE/pairing, Wi-Fi/IP, clock, city/weather and one wrong-code recovery. Segmented writes preserved NVS/PHY ranges; startup had no Wi-Fi credentials, so that flash does not prove restoration of previously saved settings.
+- Unverified: remaining abnormal Wi-Fi/BLE recovery, AP loss/recovery, DHCP delay or disconnect while waiting for IP, internal-handler residue fault injection, BLE/weather coexistence, configuration recovery after reboot, prolonged use, measured frame rate/power, computer browsers and the phone's exact cached web bytes. Ordinary network loss cannot stand in for internal-handler fault injection.
+
+Bounded serial windows covered startup (45 seconds), navigation (60 seconds), provisioning/time/code cases (90 seconds) and city/weather (120 seconds), with each port released afterward. Some windows captured no bytes: their visual/web PASS relies on explicit operator feedback, not silence as proof of stability. The resumed city/weather window captured BLE activity but no weather-update event. The served HTML/CSS/JS matched local source on 2026-10-19. The user ended scripted acceptance after C01 and chose normal use; do not automatically resume the remaining checklist. Offline provisioning RSSI warning noise and intermittent serial evidence gaps remain recorded maintenance observations, not evidence of a crash or handler-residue failure.
+
+Next authorized increment: after committing and pushing this scene/acceptance checkpoint, implement Nextcloud task reading, collection selection, device display, manual refresh and offline cache. Completion, durable offline retry and conflict handling follow as a separate increment; they remain required product scope. Resolve real-service versions, authentication, backend location and storage limits before dependent integration; keep fixtures distinct from real Nextcloud evidence.
 
 ## 1 Current feature scope
 
@@ -121,7 +148,7 @@ This is a proposed work order, not a schedule or coding authorization. Translati
 | OTP | Local generation, protected import, unlock, encrypted backup and recovery | Vectors, incorrect time, offline use, wrong recovery material and recovery without original device |
 | Integrated validation | Host tests, complete repository gate and mixed device use | Heap, stacks, task exit, preservation and connection switching |
 
-Only planning documents have changed. Features, providers, BLE security, scanning, OTP security, capacity and runtime remain unverified. Check all five required skills before development. Actual firmware deliveries separately report Build, Host tests, Device tests and Unverified, and proactively offer authorized device testing under repository rules.
+The current implementation and evidence are recorded in section 0; the broader feature/security/resource proposals below their decision gates remain unverified. Check all five required skills before development. Actual firmware deliveries separately report Build, Host tests, Device tests and Unverified, and proactively offer authorized device testing under repository rules.
 
 ## 10 Previous documents
 

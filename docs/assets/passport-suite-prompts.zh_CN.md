@@ -4,7 +4,9 @@
 
 ## 1 执行边界与公共提示词
 
-2026-10-05，Asia/Shanghai。[plan](passport-suite-plan.zh_CN.md)固定范围，[PRD](passport-suite-prd.zh_CN.md)定义 SU 结果/页面，[contract](passport-suite-contract.zh_CN.md)定义 SC 建议。U/D/C/V 同 PRD。以下全部为 D/V 后续任务，不是本轮授权；C 仅基线 API/工具。本轮完整交付翻译/OTP 详细设计，不实现固件。不得执行旧旅行 D1—D9、验收号、存储/配网指令。
+设计日期为 2026-10-05，状态更新为 2026-10-19，Asia/Shanghai。[plan](passport-suite-plan.zh_CN.md#0-当前实现与验收)记录当前范围、实现和验收，[PRD](passport-suite-prd.zh_CN.md)定义 SU 结果/页面，[contract](passport-suite-contract.zh_CN.md)定义 SC 建议。U/D/C/V 同 PRD。以下阶段保留原始设计工作顺序，不表示已经完成的首页/配网仍不存在。用户已授权星轨/验收检查点及随后的 Nextcloud 先只读增量，不代表全部 ST-01/ST-03 门槛已通过或整个应用已获准实施。不得执行旧旅行 D1—D9、验收号、存储/配网指令。
+
+当前顺序：整理并推送星轨修复与双语验收记录，再实现任务发现/选择/读取、设备展示、手动刷新和离线缓存；标记完成、离线重试和冲突处理放到后续增量。Q-05/07/11 继续约束存储、真实 Nextcloud 兼容性和服务集成。用户选择正常使用，意味着上一轮逐项真机清单已结束；新固件仍需单独进行准确镜像的刷写交接。
 
 每个新获准阶段前置以下公共提示词：
 
@@ -170,7 +172,9 @@ manifest/hash。验证准入并发、100 次退页、24 h 混合运行、无线�
 
 存在提示词不代表阶段就绪。无供应商、浏览器不支持、物理安全弱点、空间不足不能隐含处理。尽早评审 Q-02/04/05/10，不强制 OTP 最后。
 
-## 6 本轮文档验证
+## 6 历史文档验证（2026-10-05）
+
+本节只记录原始设计交付。当前 Build、Host tests、Device tests 和 Unverified 结果维护在规划的实现检查点中。
 
 本轮只改文档。执行 `./tools/validate.sh --static`，再独立检查全部新本地链接及双语 SU/SC/ST/SA/Q、协议字段、数值上限，包括未跟踪文档，执行后在此记录。已有主机测试仅为基线回归，不运行五合一固件/真实服务测试。Build: NOT RUN。Device tests: NOT RUN（文档修改不适用）。不提交/推送/部署/刷写/擦除/写 eFuse，不使用真实 OTP 种子/服务凭据。
 

@@ -30,12 +30,11 @@
 #define C_TITLE 0xE6EDF8 // 标题
 
 #define SCENE_CX 120       // 场景中心(屏宽 240)
-#define SCENE_CY 140
+#define SCENE_CY 128       // 包含光晕的运动区位于副题与时钟之间
 #define SCENE_SCALE 88.0f  // 归一化坐标 → 像素比例
 
 #define STAR_COUNT 22
-#define TRAIL_SLOTS 14        // 每太阳拖尾点数
-#define TRAIL_SAMPLE_EVERY 2  // 每 2 tick 采样一次历史位置
+#define TRAIL_SLOTS 8         // 约 0.8 秒短拖尾,快速运动时不铺满整个天区
 
 // 白热化核心色(太阳色向白混合);光晕与拖尾用太阳本色。
 static const uint32_t k_core_colors[SUITE_SCENE_SUNS] = {
@@ -170,10 +169,9 @@ static void trails_reset(void)
     s_head = 0;
 }
 
-// 每 2 tick 采样一次三太阳位置进环形缓冲。
+// 每显示帧记录位置;异常重置时清空旧轨迹,避免跨屏连线。
 static void trails_record(void)
 {
-    if (s_scene.tick % TRAIL_SAMPLE_EVERY) return;
     for (int i = 0; i < SUITE_SCENE_SUNS; i++) {
         s_hist[i][s_head].x = s_scene.suns[i].x;
         s_hist[i][s_head].y = s_scene.suns[i].y;
@@ -276,7 +274,9 @@ static void home_tick(lv_timer_t *timer)
 {
     (void)timer;
     if (!bsp_lvgl_lock(50)) return;  // 拿不到锁就丢帧,下轮再画
+    uint32_t resets = s_scene.reset_count;
     suite_scene_advance(&s_scene);
+    if (s_scene.reset_count != resets) trails_reset();
     trails_record();
     scene_render();
     clock_refresh();

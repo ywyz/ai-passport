@@ -68,6 +68,11 @@ run_static_checks() {
             -o "${test_dir}/test_suite_${suite}"
         "${test_dir}/test_suite_${suite}"
     done
+    # 三体固定步积分/扫掠碰撞在优化构建中也验证,包含高速擦碰和长期运行。
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -O2 -Imain \
+        tests/test_suite_scene.c main/suite_scene.c -lm \
+        -o "${test_dir}/test_suite_scene_o2"
+    "${test_dir}/test_suite_scene_o2"
     # 天气运行时测试用真实线程(-pthread);默认与 -O2 都必须通过,
     # 防止回到跨失效栈帧的 longjmp 类未定义行为(只在 -O2 暴露)。
     # 同轮编译天气任务桩的调用线程身份回归:主线程的有界超时取用不得被
