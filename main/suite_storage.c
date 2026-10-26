@@ -17,11 +17,9 @@ esp_err_t suite_storage_init(void)
 {
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        // 只在 NVS 布局失效时才擦除:这会丢历史配置,属已知代价并打日志。
-        ESP_LOGW(TAG, "NVS 需要重格式化,已存配置将丢失");
-        err = nvs_flash_erase();
-        if (err != ESP_OK) return err;
-        err = nvs_flash_init();
+        // Preserve Wi-Fi/city settings. Recovery requires a separately reviewed
+        // action; a cache/configuration failure must never erase default NVS.
+        ESP_LOGE(TAG, "NVS initialization failed; stored settings retained");
     }
     return err;
 }

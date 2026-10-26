@@ -4,7 +4,7 @@
 
 ## 1 Authority, status and baseline
 
-Design review date: 2026-10-05; status updated 2026-10-19, Asia/Shanghai. Scope authority and current implementation/acceptance: [suite plan](passport-suite-plan.md#0-current-implementation-and-acceptance). Protocol: [contract](passport-suite-contract.md). Work and acceptance: [stage prompts](passport-suite-prompts.md). The original review was documentation-only; later user-authorized implementation and the Nextcloud read-first increment supersede that historical authorization limit.
+Design review date: 2026-10-05; status updated 2026-10-25, Asia/Shanghai. Scope authority and current implementation/acceptance: [suite plan](passport-suite-plan.md#0-current-implementation-and-acceptance). Protocol: [contract](passport-suite-contract.md). Work and acceptance: [stage prompts](passport-suite-prompts.md). The original review was documentation-only; later user-authorized implementation supersedes that historical authorization limit. Tasks and translation T1 are implemented; OTP and wallet remain placeholders. The C marks below stay a 2026-10-05 baseline assessment, not a current inventory.
 
 Status notation throughout the three documents: **U** = user-confirmed requirement; **D** = design proposal requiring the stated review; **C** = implemented in the inspected baseline; **V** = not verified. U does not mean implemented; D does not mean approved. Unless explicitly marked C in the baseline table, all new suite behavior is D/V; scope and required outcomes are U/V. Numeric limits are proposed testable ceilings, not measured capacities.
 
@@ -51,8 +51,16 @@ The C/V columns below retain the original design-baseline assessment; they are n
 | SU-13 | Seed preservation/deletion and independent encrypted recovery | SC-09 vault and offline recovery materials | Not implemented | SA-19 |
 | SU-14 | Resource bounds, durable saves and empty-server recovery | SC-10 budgets, journals and three persistence receipts | Default layout only | SA-20, SA-21 |
 | SU-15 | Complete gate, matching image/debug artifacts and authorized device handoff in future firmware stages | ST-06 integration and evidence ledger | Gate tooling exists | SA-22 |
+| SU-16 | Prefer Simplified Chinese for user-facing pages, actions, key hints, states and errors | Preserve original user content; retain standard identifiers only when needed | Task reader localized; other pages require ongoing review | SA-06, SA-16 |
+| SU-17 | Voice-created Tasks with reviewed title and explicit confirmation | SC-06.1 MiMo ASR, conditional creation and durable retry | Candidate; real speech pending | SA-23 |
 
-Cancelled entirely: quota, coding assistant control, guide, China check-ins, QQ Music, PPT remote, routes, narration, province packs, maps, stamps, achievements and associated entrances/models. They are not deferred features. No task creation; reopening a completed task remains decision Q-07, with no active control. No FIDO2/Passkey/U2F/password vault/SSH signing or SoftAP workflow. Optional phone-browser provisioning follows the current plan checkpoint. OCR, automatic language detection and translation history are not required deliverables; adding them requires a new scope decision.
+SU-16 was confirmed on 2026-10-20 and applies to current corrections and future
+increments. Task refresh must remain visible and selectable with either an empty
+or populated cache. New list visits focus Refresh; returning from details retains
+the selected task. Standard key names (`OK`), `USB`, timezones and original task
+titles/notes may retain their original spelling.
+
+Cancelled entirely: quota, coding assistant control, guide, China check-ins, QQ Music, PPT remote, routes, narration, province packs, maps, stamps, achievements and associated entrances/models. They are not deferred features. Voice task creation is required under SU-17; reopening a completed task remains decision Q-07, with no active control. No FIDO2/Passkey/U2F/password vault/SSH signing or SoftAP workflow. Optional phone-browser provisioning follows the current plan checkpoint. OCR, automatic language detection and translation history are not required deliverables; adding them requires a new scope decision.
 
 ## 4 New UI and universal input rules
 
@@ -89,7 +97,7 @@ All rows are D/V implementing SU-01/04; states in section 6 apply to each row. L
 | Task lists / launcher | Selected collections, sync age/count; UP/DOWN select | Tasks in collection | Menu Back/select collections on website/refresh; Back launcher |
 | Task items / list | Title, due kind/date/zone/status/pending/conflict; UP/DOWN select | Task detail | Menu Back/refresh; Back collections |
 | Task detail / items | Title, note paging, original due, cache labels; UP/DOWN scroll | Complete confirmation if actionable; completed items show status only | Back to items through menu |
-| Complete confirmation / task | Explicit UID/account/list and Complete/Cancel; UP/DOWN choose | Save durable completion or cancel | Cancel to detail; no task creation/reopen |
+| Complete confirmation / task | Explicit UID/account/list and Complete/Cancel; UP/DOWN choose | Save durable completion or cancel | Cancel to detail; voice creation has a separate confirmed preview; no reopen |
 | Task conflict / sync/detail | Cached intention and newer remote summary; UP/DOWN scroll | Review menu: retain remote (cancel intention) or refresh and reconfirm completion against new ETag | Back detail; unresolved intent stays visible, no overwrite |
 | Generic action/confirmation/error / any page | Cause, safe action, selection; UP/DOWN choose | Retry only if permitted, acknowledge or confirm | Cancel/Back to origin; generation guard still applies |
 

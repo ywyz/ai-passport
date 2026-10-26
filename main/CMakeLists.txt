@@ -17,10 +17,28 @@ idf_component_register(
          "suite_scene.c"
          "suite_home.c"
          "suite_launcher.c"
+         "suite_net.c"
+         "suite_tasks_core.c"
+         "suite_tasks.c"
+         "suite_tasks_ui.c"
+         "suite_tasks_nav.c"
+         "suite_task_ops.c"
+         "suite_task_voice.c"
+         "suite_translation_core.c"
+         "suite_translation_protocol.c"
+         "suite_translation_http.c"
+         "suite_translation_config.c"
+         "suite_translation_usb_proto.c"
+         "suite_translation_usb.c"
+         "suite_audio_job.c"
+         "suite_translation.c"
+         "suite_translation_mock.c"
+         "suite_translation_ui.c"
+         "fonts/suite_tasks_font_16.c"
          "fonts/suite_font_16.c"
          "fonts/suite_font_clock.c"
     INCLUDE_DIRS "." "fonts"
-    REQUIRES bsp app_update esp_event esp_netif esp_timer esp_wifi esp_http_client lwip mbedtls nvs_flash json bt
+    REQUIRES bsp app_update esp_event esp_netif esp_timer esp_wifi esp_http_client esp_hw_support lwip mbedtls nvs_flash json bt esp-tls esp_driver_usb_serial_jtag
 )
 # 字体 C 文件按 LV_LVGL_H_INCLUDE_SIMPLE 包含 lvgl.h(managed component 布局)。
 target_compile_definitions(${COMPONENT_LIB} PRIVATE LV_LVGL_H_INCLUDE_SIMPLE)

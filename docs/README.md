@@ -42,6 +42,29 @@ it anything—from a pocket companion to something no one has imagined yet.
 | --- | --- | --- |
 | Open firmware and reusable examples give you room to shape your own experience. | Start from an idea and follow clear guides to make it real, even if this is your first build. | Make a companion, a tool, a game—or anything you can imagine. |
 
+## Current project state
+
+The application work in this repository is documented in
+[docs/assets](assets/README.md); [suite-plan section 0](assets/passport-suite-plan.md#0-current-implementation-and-acceptance)
+is the single current authority.
+
+- **Current source:** this native checkout, detached at `21c5110` with
+  uncommitted application changes. The Windows checkout holds documentation mirrors
+  but stale application code; it must not be used as source, build input or flash
+  candidate, and its code cannot establish native feature absence. Its own flash
+  logs remain valid for the artifact they describe.
+- **Implemented and deployed:** Nextcloud Tasks reading, completion, offline cache
+  and voice creation; translation T1 with MiMo speech recognition and text
+  translation. Translation T2/TTS is unimplemented; OTP and wallet remain
+  placeholders.
+- **Current blockers:** after a mistaken 2026-10-25 flash the device holds an older
+  build whose launcher has only a translation placeholder. The last real OC-11
+  on-device attempt failed at service readiness before capture. Recovering the
+  approved artifact, while checking its existing authorization, comes first; that
+  readiness diagnosis can then resume.
+- **Workflow:** OpenCode Go `opencode-go/deepseek-v4.1-flash` codes, fixes, tests and
+  builds; Codex coordinates, independently reviews, and guides device acceptance.
+
 ## Find your starting point
 
 | I want to… | Start here |
@@ -152,7 +175,7 @@ The table below describes the application capabilities implemented by the curren
 
 | Capability | Confirmed implementation | Application interface | Boundaries that must be respected |
 | --- | --- | --- | --- |
-| Display | ST7789P3, 240 × 320 portrait RGB565, SPI2 at 40 MHz; LEDC backlight | `bsp_display_*`, `bsp_lvgl_*` | The ESP32-C3 has no PSRAM; the current design uses a small single DMA buffer; the BSP exposes no LCD MISO, touch, or TE interface |
+| Display | ST7789P3, 240 × 320 portrait RGB565, SPI2 at 80 MHz; LEDC backlight | `bsp_display_*`, `bsp_lvgl_*` | The ESP32-C3 has no PSRAM; the current design uses a small single DMA buffer; the BSP exposes no LCD MISO, touch, or TE interface |
 | Input | `UP`, `DOWN`, and `OK` share an ADC resistor ladder on GPIO0 | `bsp_button_init()`, `bsp_button_read_mv()` | Callbacks run in the button component task and must not block; do not create a second ADC1 unit |
 | Audio | ES8311 with full-duplex PCM over I2S0, supporting playback, microphone capture, and software suspend/resume | `bsp_audio_*` | PCM reads and writes block and belong in a worker task; stop PCM I/O before codec sleep; format changes must retain the BSP close/open sequence |
 | Battery | CW2017 state-of-charge and voltage readings | `bsp_battery_*` | This capability is optional at runtime; accuracy depends on the cell and battery profile and is not equivalent to a calibrated result |

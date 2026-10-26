@@ -6,6 +6,23 @@
 
 本文是本仓库 AI 辅助工作的唯一必读入口。根据下方路由表读取当前任务所需文档，不要默认加载全部 README。
 
+## 当前进展与工作区
+
+- 当前应用源码是权威的本机原生工作区 `/home/ywyz/code/ai-passport-oc-20261022/repo`，
+  位于预期的 `feature/feature10-ble-provisioning` 分支线。当前分支、提交和未提交状态
+  必须直接从 Git 读取；不得假定固定提交或干净工作区。
+  必须直接读取原生源码；不得把代码图谱或旧检出视为完整覆盖。
+- `C:/Users/yw980/code/ai-passport` 及其 `/mnt/c/...` 视图有文档镜像，但应用代码已过期。
+  它们不是当前应用源码、构建输入或刷写候选，其代码也不能证明原生功能不存在；它们自身的
+  真机刷写日志对其所描述的产物仍然有效。不要通过在两棵树之间复制代码来判断状态。
+- 用户工作流：OpenCode Go `opencode-go/deepseek-v4.1-flash` 负责编码、修复、测试和固件
+  构建；Codex 负责统筹、独立复核并指导真机验收。
+- 查看项目状态时先读 [`docs/assets/README.zh_CN.md`](docs/assets/README.zh_CN.md)，再读
+  [suite-plan 第 0 节](docs/assets/passport-suite-plan.zh_CN.md#0-当前实现与验收)。第 0 节是
+  唯一的当前权威；2026-10-05 设计文档中尚未满足的要求仍有效，但不得覆盖第 0 节。
+- 绝不以 Windows 图谱或随手更新的 `build/FoloToy-...-full.bin` 代替原生源码或精确产物
+  身份。重新构建的文件不代表设备上已安装的镜像。
+
 ## 必需 AI 技能
 
 以下五个技能是本仓库 AI 辅助开发的必需项：`passport-develop`、
@@ -45,6 +62,7 @@
 
 | 任务 | 修改前读取 |
 | --- | --- |
+| 当前项目状态或下一步 | `docs/assets/README.zh_CN.md`，再读 `docs/assets/passport-suite-plan.zh_CN.md` 第 0 节 |
 | 任意代码修改 | `docs/development/ai-guide.zh_CN.md`、相关头文件和相邻实现 |
 | 应用工作流或核心技能配置 | `skills/README.zh_CN.md`；确认五个必需技能可用，再使用匹配当前任务的技能 |
 | 环境引导或缺少工具链 | `docs/development/engineering/environment-setup.zh_CN.md` |

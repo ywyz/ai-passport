@@ -7,10 +7,10 @@ CONFIG_IDF_TARGET="esp32c3"
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 # 固定 8MB 镜像头，关闭 detect，便于 idf.py merge-bin。
 CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE=n
-# 默认模板只保留 NVS、PHY data 和占用剩余空间的 factory app；用户可按需修改。
+# 应用使用独立任务配置/双槽缓存；partitions.csv 仍保留上游最小模板。
 CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
-CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.suite.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.suite.csv"
 
 # --- 控制台:USB-Serial-JTAG(C3 原生 USB,GPIO18/19)---
 # 不用 UART0:其默认 TX=GPIO21 与本板背光引脚冲突。
@@ -26,14 +26,13 @@ CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_20=y
 # 生成的子集字体使用压缩位图(lv_font_conv 默认),必须开启解码支持。
 CONFIG_LV_USE_FONT_COMPRESSED=y
-# LVGL 内置 malloc 池大小。独立静态区、不与系统堆共享,配大了会白白占用 RAM。
-# 注意:LVGL 9.6 已弃用 KILOBYTES 变量,必须直接用字节单位 LV_MEM_SIZE。
-# 设置页 48 城约 100 个对象实测可耗尽 32KB 池(children realloc 返回 NULL 崩溃,
-# 设备实证 MTVAL=0xc4=4*49);48KB(49152)按 ~300B/对象留出安全余量(功能 9 实测 <32K)。
-# 降池动机:RSA-4096 验签走软件路径(C3 硬件上限 3072bit),需要大块连续堆,
-# 64K 池时期验签时刻最大连续块仅 17.4K,软件模幂分配失败(-0x4290=
-# RSA_PUBLIC_FAILED+MPI_ALLOC_FAILED);48K 池释放 16K 后 ~33K 可满足。
-CONFIG_LV_MEM_SIZE=49152
+# LVGL 页面对象与 TLS 共用系统堆,页面退出释放后即可供网络使用。
+# 待办接入后,固定 48 KiB 独立池使天气/待办在 RSA 验签时分配失败
+# (-0x4290=RSA_PUBLIC_FAILED+MPI_ALLOC_FAILED)。不能只缩小固定池:
+# 省市选择页有约 100 个对象,曾耗尽 32 KiB 池。采用 LVGL 的 CLIB 后端,
+# 按当前页面实际用量分配,避免把未使用的 UI 内存永久隔离在静态池。
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_FONT_FMT_TXT_LARGE=y
 
 # --- 系统 ---
 CONFIG_FREERTOS_HZ=1000
@@ -48,18 +47,18 @@ CONFIG_LWIP_TCP_WND_DEFAULT=2880
 
 # --- TLS 证书包(Open-Meteo/服务器 HTTPS 用系统 CA 包校验)---
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
-# BLE 常驻后内部堆紧张:默认 16K/4K TLS 缓冲导致 ssl_setup 分配失败
-# (-0x7F00)。天气响应为小 JSON,证书链 ≤4K,缩到 4K/1K。
-# 设备实测 BLE+Wi-Fi 就绪后请求前最大连续内部块仅 ~7.5K,
-# ssl_setup 一次分配 in_buf=IN+2048(overhead),8K 时需 ~10.3K 必失败,
-# 4K 时需 ~6.1K 可通过。
-CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=4096
+# HTTP 的 512B 分块读取不会限制 TLS 记录大小。真实待办响应的加密记录
+# 实测达 8277B,4KiB 输入上限会在证书验证成功后报 -0x7100。
+# 支持标准 16KiB TLS 内容上限,由 IDF 动态后端按记录头分配/释放 RX,
+# 而非在握手全程预留最大输入缓冲,保留 RSA 软件验签阶段的堆余量。
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 # 请求方向只有 GET 头+城市参数(<300B),OUT 1K 足够,BT 常驻后省 1K 连续堆。
 CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=1024
 # 硬件大数加速保持开启:验签链中 ISRG Root X1(RSA-4096)签发的中间证书
 # (Root YR)需要 RSA-4096 模幂,而 C3 硬件上限 3072bit,该运算始终走
 # MBEDTLS_LARGE_KEY_SOFTWARE_MPI 的软件回退。软件模幂需要大块连续堆,
-# 堆余量(见 LVGL 池注释)修复后已满足;软件路径 RSA-4096 验签 <100ms 可接受。
+# 堆余量由 LVGL/系统共享分配改善,仍需在真机复核最大连续块与验签。
 CONFIG_MBEDTLS_HARDWARE_MPI=y
 
 # --- Bluetooth LE / NimBLE ---

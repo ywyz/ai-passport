@@ -4,7 +4,7 @@
 
 ## 1 协议状态与公共边界
 
-设计基线为 2026-10-05 的提交 `0b9e4c81ee4421c0bac39ca3561d65a8285acd4a`；状态更新为 2026-10-19，Asia/Shanghai。依据及 U/D/C/V 见 [PRD](passport-suite-prd.zh_CN.md)，映射及决策见 [prompts](passport-suite-prompts.zh_CN.md)。[当前检查点](passport-suite-plan.zh_CN.md#0-当前实现与验收)说明已实现的首页/天气/浏览器配网及证据。SC-07 星轨交互已实现并完成部分真机验证；更强的安全、签名时间、业务模型与缓存机制除非另有记录仍属建议。六位应用配对码不能被表述为 SC-02 的认证加密设计。实施前需评审和实测数值；修改已定上限需同步双语、测试与能力声明。
+设计基线为 2026-10-05 的提交 `0b9e4c81ee4421c0bac39ca3561d65a8285acd4a`；状态更新为 2026-10-25，Asia/Shanghai。依据及 U/D/C/V 见 [PRD](passport-suite-prd.zh_CN.md)，映射及决策见 [prompts](passport-suite-prompts.zh_CN.md)。[当前检查点](passport-suite-plan.zh_CN.md#0-当前实现与验收)说明已实现的首页/天气/浏览器配网、待办及翻译 T1 行为与证据。SC-07 星轨交互及 SC-08 T1 采集/上传已实现并完成部分真机验证；T2 合成/播放、更强的安全、签名时间、业务模型与其余缓存机制除非另有记录仍属建议。六位应用配对码不能被表述为 SC-02 的认证加密设计。实施前需评审和实测数值；修改已定上限需同步双语、测试与能力声明。
 
 所有文字为合法 UTF-8；以下长度为编码字节，不含结尾 NUL（C 需另留一字节）。拒绝无效 UTF-8、重复 JSON key、无效枚举、整数溢出、超过 8 层嵌套及未知必需字段。不静默截断权威字段、ID 或票码。UUID 为规范小写字符串；JSON 版本号以十进制字符串表示 uint64，避免浏览器精度损失。哈希为小写十六进制 SHA-256。v1 不接收压缩网络负载；读入时即检查上限，不先分配；检查 Content-Type 和长度但不单独信任它们。
 
@@ -83,6 +83,27 @@ worker 接收取消 token，不拿页面指针；完成模型引用稳定存储/
 
 ## SC-06 Nextcloud CalDAV 与离线完成
 
+实现配置，2026-10-20（批准的部署/刷写完成，设备 SA-12 待完成）：用户删除 Deck 后仅
+接入 Tasks。快照增加可选 `task_id`（规范身份的 64 位十六进制 SHA-256）和
+`completion_allowed`；旧记录可阅读但不能完成。传输意图以 `task_id` 替代完整
+`identity`，服务端保留原身份。`payload_hash` 为六个意图字段排序紧凑 JSON 的
+SHA-256，不包含 `payload_hash` 和可选显式 `retry`。读取、选择管理及完成令牌
+分别限定权限。
+
+首版队列容量八条，低于建议的 64 条上限。提交意图位于加密 `taskcfg`/`taskops`
+NVS，不占用快照槽或 Wi-Fi/城市 NVS，分区不变。存储满或损坏时拒绝接纳。详情
+短按 OK 打开操作菜单，再次确认完成且默认取消。待同步表示本地持久保存，只有
+匹配的服务端回执才表示远端成功。相同状态轮询不重复写 Flash，刷新保留未解决意图。
+目前取消仅支持显式放弃已终结的冲突/只读/不存在请求；下文的远端进行中取消和
+恢复未完成仍属未实现建议。响应丢失恢复采用持久记录的提交资源精确哈希。更新单个
+完成资源保留全来源上次抓取时间。当前上限、重试预算、首次令牌配置及验收见
+[设备](passport-device-tasks.zh_CN.md)与[伴随服务](passport-nextcloud.zh_CN.md)记录。
+
+2026-10-20 实现通过 CalDAV calendar-multiget REPORT 在条件 PUT 前后读取单个
+完整资源/ETag：实测边缘缓存对携带 no-cache 的认证 GET 仍返回旧内容。XML 归一化
+后恢复规范 CRLF，使提交资源哈希稳定。缓存引起的不一致不允许无条件写入或静默
+放弃意图。
+
 实现 SU-07/08。由服务器适配器而非设备使用 CalDAV。发现认证 principal/current-user-principal、calendar-home-set，以 PROPFIND 读取集合及 supported-calendar-component-set 的 VTODO 支持，再 calendar-query REPORT，必要时 calendar-multiget。保留 collection href/凭据账户/ETag。选择保存明确 collection ID，不依赖显示名。[RFC 4791](https://www.rfc-editor.org/rfc/rfc4791)定义发现/report，[RFC 5545](https://www.rfc-editor.org/rfc/rfc5545)定义 VTODO/时间。[Nextcloud Tasks](https://github.com/nextcloud/tasks)是真实目标，Q-07 记录部署的 Nextcloud/Tasks 版本。WebDAV 文件备份不能代替 CalDAV。
 
 模型：`{schema:1,account_id,collection_id,href,uid,recurrence_id?,etag,summary,status,percent_complete,completed_at?,due,note,modified_at?,snapshot_revision,downloaded_at}`。身份 `(account_id,collection_id,uid,recurrence_id)`；href 为定位，UID 单独不保证全局唯一。重复任务需真实版本验证，不通过简化条目完成整个重复系列。服务器保存原始 VCALENDAR/VTODO，保留未知属性、提醒、重复/子任务关系和折行。未验证实例/共享列表明确只读。
@@ -97,6 +118,48 @@ PUT 成功但响应丢失时重新读取：目标已完成且记录意图无相�
 
 SA-10 使用模拟发现/ETag/掉电；SA-11 单独要求真实 Nextcloud 发现/读取；SA-12 单独要求真实完成、重启/离线重放、网页并发修改。模拟成功不能满足真实验收。
 
+## SC-06.1 语音新建待办
+
+SU-17 / SA-23，用户于 2026-10-21 新增；当前为候选实现。
+使用 MiMo `mimo-v2.5-asr`，仅做中文识别，遵循官方
+[语音接口](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/Speech-Recognition)。
+用户选择按量 API，尚未进行真实调用。2026-10-21 核查的[公开价格](https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go)
+为每小时音频 ¥0.5。密钥只保存在独立私密服务端文件，不写设备 NVS。默认每日上限
+300 秒音频，每次尝试前事务扣减，含结果不明/失败尝试；不自动重试付费识别。
+单 WSGI 进程串行处理识别。
+
+GET `/suite/v1/task-voice` 使用已有独立写令牌，返回就绪状态及唯一已选、属于当前
+账户且具 DAV bind/write 权限的列表。选中多个列表时，需先在服务端明确选择。
+POST `/suite/v1/task-transcriptions` 仅接受规范 PCM WAV：16 kHz、16-bit LE 单声道，
+最短 50 ms，最长 12 秒，含头共 384,044 字节。仅此精确代理路径提高上传上限，其他
+接口保留 4 KiB。录完后上传；供应商请求使用 Base64 WAV 和 `asr_options.language=zh`。
+标题必须非空、合法 UTF-8、最多 512 字节且无控制字符；超长失败，不静默截断。
+识别音频不创建任务。录音/转写需要联网及可信 TLS，本增量不支持本地离线语音识别。
+离线意图测试从已有识别预览开始，验证提交期间断网的保留/恢复，不验证断网后新录音
+并转写任务。预览保留识别原文标题、显示目标列表，并要求默认取消的明确确认。
+
+已有待办 worker 独占 Flash、PCM 和语音网络工作。只使非活动缓存槽失效来暂存有界
+音频，活动缓存经过录音/取消/重启仍保留。录音前写暂存标记；先擦音频扇区，最后
+清除标记，启动时清理中断暂存。音频缓冲仅 512 字节，不在 RAM 保存整段录音。
+PCM 返回后通过 `bsp_audio_release()` 释放 codec/I2S DMA，再进行 TLS 上传；共享
+I2C 保留。取消后的迟到结果不能恢复页面，worker 不持有 LVGL 指针。PCM 停止取决于
+BSP/依赖超时；识别取消可能等待当前一次最长 10 秒的 socket 操作结束。
+
+POST `/suite/v1/task-creations` 接收 `{collection_id,operation_id,summary,
+payload_hash,retry?}`；哈希为除 hash/retry 外排序紧凑 JSON 的 SHA-256。显示待同步
+之前，设备在 `taskcfg/taskvoice` NVS 持久提交一份 CRC 保护的意图。未解决的新建请求
+阻止再次录音，正常重启后仍用相同 ID/标题重试。服务器 SQLite 先持久接收，再应用。
+同 ID/哈希返回原回执，内容改变则冲突。UID 和资源名由操作 ID 确定，只使用
+`If-None-Match: *`，仅接受 HTTP 201。通过 calendar-multiget REPORT 精确校验规范
+资源，响应丢失后恢复同一资源，绝不覆盖内容不同的已有资源。写入前再次检查选择、
+归属和 bind 权限。瞬时失败五次后暂停，手动重试/重连保留同一 ID。仅证明终结拒绝
+的请求可显式放弃；成功需确认已知晓后才能再建。读取/管理令牌不能识别/新建，写令牌
+仍不能读快照或改选择。不需重写 Wi-Fi/城市/令牌/密钥分区。
+
+SA-23 区分 WAV/缓存/日志/解析纯测试、真实 worker 取消、UI 确认和模拟供应商/CalDAV
+故障，与真实麦克风、MiMo/TLS/计费、中文显示、离线新建重放、真实堆栈及 Nextcloud
+创建成功。代码测试不能代替这些真机检查。
+
 ## SC-07 首页场景与天气
 
 实现 SU-09。ST-03 验收后首页为默认启动。程序三体风格场景是示意而非天文预测：三个归一化质量/位置，软化平方反比力，固定步积分，每模拟步最多 20 ms，每渲染帧最多四步，限制坐标/速度，发散时确定性种子重置。主机检查有界/确定性/无 NaN。渲染最多 10 FPS，隐藏暂停；时间文字 1 Hz 更新，不用整屏 RGB 帧。功耗/流畅度须实测，不从数值推定。
@@ -107,17 +170,17 @@ SA-10 使用模拟发现/ETag/掉电；SA-11 单独要求真实 Nextcloud 发现
 
 ## SC-08 语音翻译与字体
 
-实现 SU-10/11。格式建议：PCM 有符号 16-bit 小端、16,000 Hz、单声道，流式块无 WAV 头。最长 10 s =320,000 字节，最短 0.3 s。只有 ONLINE、可信 TLS、服务器会话接纳后 OK 开始，再次 OK 结束；UP/长 OK 取消。方向 zh-CN→en 或 en→zh-CN，不自动识别。每块 1,024 字节（512 samples/32 ms），八块 RAM ring =8 KiB，加录制/播放临时区 ≤4 KiB。不能用 demo 96 KB 整段分配，也不能 RAM 保留 320 KB。服务器暂存有界音频，设备不保存 Flash 音频历史。
+实现 SU-10/11。已批准采集：PCM 有符号 16-bit 小端、16,000 Hz、单声道；最长 10 s = 320,000 PCM 字节，最短 0.3 s。录音以带 44 字节头的单个 canonical WAV 保存于明确自有的非活动任务缓存 Flash 槽，最多 320,044 字节，绝不在 RAM 保留整段音频。槽位标记及 `0x50000` 翻译区间在上传、取消、失败或启动恢复后擦除；清理可能扩展到旧 `0x5f000` 范围，这不表示整个生命周期只使用 `0x50000`。只有 ONLINE、可信 TLS 和本地服务就绪后 OK 开始，再次 OK 结束；UP/长 OK 取消。方向 zh-CN→en 或 en→zh-CN，不自动识别。已被取代的仅易失 ring 与分块上传模型不再是当前方案。
 
-POST `/suite/v1/translations` 建作业 `{operation_id,source_lang,target_lang,format,limit_bytes}`；PUT `/{job}/audio/{sequence}` body ≤8 KiB，带块 SHA-256，按序应答 offset；POST `/{job}/finish` 携总字节/hash。相同序号/hash 重复应答同 offset，不同内容冲突。ring 溢出/背压 >250 ms 则 BUSY 终止整作业，不丢样本后伪装完整录音。必须有预算地持续读 PCM；HTTP 批量跟不上则降低经批准录音上限或评审压缩格式，不扩大至无限缓冲。服务器作业绝对寿命 120 s，部分上传不自动触发付费识别。DELETE `/{job}` 幂等取消，但不承诺已发生服务商费用可撤销。
+POST `/suite/v1/translations` 准入 `{schema,operation_id,source_lang,target_lang,format,audio_sha256,audio_bytes}`，202 之前必须先持久准入。`PUT /suite/v1/translations/{job}/audio` 只承载一个 canonical WAV（`Content-Type: audio/wav`，必须有 `Content-Length`），最多 320,044 字节，且完整文件 SHA-256 必须匹配；长度、封装或哈希不符时在 provider claim 前拒绝。`GET /{job}` 轮询状态/结果，幂等 `DELETE /{job}` 取消。T1 没有分块序号或 `finish` 路由。相同内容重复上传不得重复 ASR；任何 POST/PUT 结果不明都转为 `UNKNOWN`，不自动重试付费操作。作业身份和代次必须与准入一致。取消不承诺撤销已发生的供应商费用。
 
-READY → RECORDING/UPLOADING → FINALIZING → RECOGNIZING → TRANSLATING → SYNTHESIZING → RESULT → PLAYING；或 CANCELLED/ERROR → READY。每忙状态 UP/长 OK 可取消，代次过滤迟到结果。上传连接 10 s、闲置 5 s、录音 10 s；识别 20 s、翻译 15 s、合成 20 s、录音后总流程 60 s。返回无秘密单调进度。仅同作业查询/幂等上传可重试；finish 结果不明不能自动新建付费作业。离线不新录音，中途断网明确取消，不能暗示离线翻译。
+READY → RECORDING/UPLOADING → FINALIZING → RECOGNIZING → TRANSLATING → RESULT；或 CANCELLED/ERROR → READY。SYNTHESIZING 与 PLAYING 仍属 T2 建议。每忙状态 UP/长 OK 可取消，代次过滤迟到结果。上传连接 10 s、闲置 5 s、录音 10 s；识别 20 s、翻译 15 s、录音后总流程 60 s；合成 20 s 仍为 T2 建议。返回无秘密单调进度。仅同作业查询/幂等上传可重试；上传结果不明不能自动新建付费作业。离线不新录音，中途断网明确取消，不能暗示离线翻译。
 
 结果 `{job_id,source_text,target_text,source_lang,target_lang,provider_states,audio?,expires_at}`。每段文字 ≤2,048 字节且 ≤512 Unicode scalar，按字符边界验证。超限 TOO_LARGE，可保留明确标注的有效源文，不用摘要冒充翻译。源/译文独立标注滚动区。合成失败仍可展示文字并提示语音不可用。播放 PCM 16 kHz/16-bit/mono、≤15 s/480,000 字节，经同一有界 ring 流式播放；OK/UP/长 OK 经音频所有者停止，建议 ≤2 s，须实测 BSP 延迟。音频 URL 必须授权、5 min 过期，不是公开永久链接。
 
-Q-09 适配边界：识别 有界音频→源文；翻译 明确语言对→译文；合成 文本→有界音频。真实适配前确定供应商/API 版本、区域、流式能力、上限、费用封顶、取消语义、数据保留和许可。模拟适配标 `provider_mode=mock`；SA-14 测模拟/边界，SA-15 要求真实双向语音/文字/播放，不能把 fixture 当真实服务。
+Q-09 适配边界：识别 有界音频→源文；翻译 明确语言对→译文；合成 文本→有界音频。T1 使用已批准的 MiMo `mimo-v2.5-asr` 加 `mimo-v2.6-flash` 适配器；DeepSeek 已拒绝作为生产供应商。模拟适配标 `provider_mode=mock`，且绝不作为真实失败时的静默回退。SA-14 测模拟/边界。SA-15 要求真实中文→英文和英文→中文语音/文字/播放，目前仍不完整：真实 ASR/MT 链路已存在，T2 播放尚未实现。不能把 fixture 当真实服务。
 
-保留建议：设备音频仅内存，结束/取消/错误后清理释放；文字仅当前页面会话，退出/重启清理，无历史。服务器原音/合成暂存取消或成功取回后删，绝对 TTL 5 min，重启清孤儿；源/译文负载不进请求日志/备份。不能假定服务商删除政策，Q-09 必须批准，否则阻断实际用户音频；匿名时长/错误指标也需另行批准。
+保留：已批准的临时明文 WAV 在单次上传后擦除，取消、失败或启动恢复时也擦除。文字仅当前页面会话的 RAM，120 秒 TTL，退出或重启擦除，无历史。服务器原音/合成暂存取消或成功取回后删除，排队音频 300 秒过期，重启清理孤儿；源/译文负载不进请求日志/备份。不能假定服务商删除政策：用户已接受选定方案无固定 TTL 及未确认的音频训练处理，且不声称账户区域保证。匿名时长/错误指标也需另行批准。
 
 中文字体：使用许可清楚、版本固定 CJK 字体，包含全部静态 UI 与声明动态字集（候选 ASCII/标点/CJK U+4E00–U+9FFF，容量待 Q-05），正文 16 px、标题 20 px。明确应用于 label/菜单/弹窗/状态。服务器报告不支持码点，设备明确提示不支持字符、网页保留原文，不静默删字符/关闭占位。验证逐码点覆盖、已知缺字负例、UTF-8 换行/截断、转换器/许可及[字体接入](../development/engineering/lvgl-chinese-fonts.zh_CN.md)。静态子集不能宣称任意姓名/译文覆盖。候选完整字集放不下则明确缩小或另评审有界字体交付设计，不能先宣称支持。SA-16 真机逐页观察长文本、中英文混排。
 

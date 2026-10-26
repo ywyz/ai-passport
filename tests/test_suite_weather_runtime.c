@@ -10,6 +10,10 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Network ownership is tested separately; keep HTTP fault injection local. */
+bool suite_net_take(unsigned ms) { (void)ms; return true; }
+void suite_net_give(void) {}
+
 // 固定测试时间基准:2026-10-07 00:00:00 UTC。
 #define TEST_EPOCH_BASE ((int64_t)1791331200)
 

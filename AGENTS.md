@@ -6,6 +6,30 @@
 
 This file is the only mandatory entry point for AI-assisted work in this repository. Read task-specific documents from the routing table below; do not load every README by default.
 
+## Current continuation status
+
+- The current application source is the authoritative native working tree at
+  `/home/ywyz/code/ai-passport-oc-20261022/repo`, on the intended
+  `feature/feature10-ble-provisioning` branch line. Read the current branch,
+  commit and dirty state directly from Git; do not assume a fixed commit or a
+  clean tree. Read the native source directly; do not treat a code graph or an
+  older checkout as complete coverage.
+- `C:/Users/yw980/code/ai-passport` and its `/mnt/c/...` view hold documentation
+  mirrors but stale application code. They are not the current application source,
+  build input or flash candidate, and their code cannot establish that a native
+  feature is absent. Their own physical-flash logs remain valid for the artifact they
+  describe. Do not copy code between the two trees to settle a status question.
+- User workflow: OpenCode Go `opencode-go/deepseek-v4.1-flash` performs coding,
+  fixes, tests and firmware builds; Codex coordinates the work, independently
+  reviews it and guides device acceptance.
+- For project status, read [`docs/assets/README.md`](docs/assets/README.md) and
+  then [suite-plan section 0](docs/assets/passport-suite-plan.md#0-current-implementation-and-acceptance).
+  Section 0 is the single current authority; the 2026-10-05 design documents keep
+  their unmet requirements but do not override it.
+- Never substitute the Windows graph or a convenient mutable
+  `build/FoloToy-...-full.bin` for native source or exact artifact identity. A
+  rebuilt file has no installed-image meaning.
+
 ## Required AI skills
 
 The following five skills are required for AI-assisted development in this repository:
@@ -50,6 +74,7 @@ retain the separate authorization requirements for flashing, Git writes, and pub
 
 | Task | Read before editing |
 | --- | --- |
+| Current project status or where to continue | `docs/assets/README.md`, then `docs/assets/passport-suite-plan.md` section 0 |
 | Any code change | `docs/development/ai-guide.md`, relevant headers and neighboring implementation |
 | Application workflow or core skill setup | `skills/README.md`; ensure the five required skills are available, then use only the matching skill |
 | Environment bootstrap or missing toolchain | `docs/development/engineering/environment-setup.md` |

@@ -145,6 +145,14 @@ recovery. They need only a host C compiler and Python, not ESP-IDF or downloaded
 Managed Components. They do not establish real timing, electrical behavior or
 device compatibility; the firmware gate compiles against the pinned dependencies.
 
+The full static gate also runs the provisioning browser tests with Node.js and
+the [Nextcloud reader](../../assets/passport-nextcloud.md) tests with isolated,
+hash-pinned Python packages. `tools/test-companion.sh` downloads its locked wheels
+on the first run and caches them under `build/tooling/companion/`; it requires
+Python with pip and does not alter the ESP-IDF or system package environment.
+Use `PIP_NO_INDEX=1` and `PIP_FIND_LINKS` with a prepared wheel directory for an
+offline run. Synthetic CalDAV tests do not establish actual service acceptance.
+
 To run an individual pure-logic test:
 
 ```bash

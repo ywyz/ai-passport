@@ -10,6 +10,11 @@
 // 失败会释放本次已创建的 codec 接口和 I2S channel，修正故障后可重试。
 esp_err_t bsp_audio_init(void);
 
+// Release codec interfaces and I2S/DMA after all PCM calls have returned.
+// Caller serializes init/format/read/write/sleep/release. Shared I2C is retained.
+// Returns failure if cleanup leaves live handles; init refuses to overwrite them.
+esp_err_t bsp_audio_release(void);
+
 // 设置采样格式。同格式重复调用是廉价的(直接复用已打开的 codec)。
 //
 // ⚠ 这里有个必须绕开的坑:esp_codec_dev_open() 在 codec【已打开】时会直接返回 OK 且

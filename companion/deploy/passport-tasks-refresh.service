@@ -1,0 +1,25 @@
+[Unit]
+Description=AI Passport periodic and on-demand CalDAV read job
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=passport-tasks
+Group=passport-tasks
+WorkingDirectory=/opt/passport-tasks
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONPATH=/opt/passport-tasks/vendor
+ExecStart=/usr/bin/python3 -B -m companion.tasks --config /etc/passport-tasks/config.json --database /var/lib/passport-tasks/tasks.sqlite3 refresh
+TimeoutStartSec=1800
+UMask=0077
+StateDirectory=passport-tasks
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/passport-tasks
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=192M
+TasksMax=8

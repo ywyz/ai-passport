@@ -6,6 +6,7 @@
 #include "suite_connection.h"
 #include "suite_storage.h"
 #include "suite_weather_logic.h"
+#include "suite_net.h"
 
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
@@ -97,8 +98,12 @@ static bool wx_fetch_once(const suite_city_t *city, suite_weather_data_t *out)
                  MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
              (unsigned long)heap_caps_get_free_size(MALLOC_CAP_DMA),
              (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
+    if (!suite_net_take(1000)) return false;
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
-    if (!client) return false;
+    if (!client) {
+        suite_net_give();
+        return false;
+    }
 
     bool ok = false;
     esp_err_t err = esp_http_client_perform(client);
@@ -135,6 +140,7 @@ static bool wx_fetch_once(const suite_city_t *city, suite_weather_data_t *out)
     }
 
     esp_http_client_cleanup(client);
+    suite_net_give();
     return ok;
 }
 

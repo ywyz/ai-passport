@@ -4,6 +4,8 @@
 
 #include "suite_pages.h"
 #include "suite_settings.h"
+#include "suite_tasks.h"
+#include "suite_translation.h"
 
 #include "bsp_display.h"
 #include "lvgl.h"
@@ -108,6 +110,10 @@ static void on_launcher_action(suite_action_t act)
     case SUITE_ACTION_OK:
         if (s_sel == 4) {
             (void)suite_app_push(&SUITE_PAGE_SETTINGS);
+        } else if (s_sel == 3) {
+            (void)suite_app_push(&SUITE_PAGE_TASKS);
+        } else if (s_sel == 0) {
+            (void)suite_app_push(&SUITE_PAGE_TRANSLATION);
         } else {
             (void)suite_app_push(&SUITE_PAGE_STUB);
         }

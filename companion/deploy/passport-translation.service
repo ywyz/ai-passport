@@ -1,0 +1,30 @@
+[Unit]
+Description=AI Passport isolated translation API
+After=network.target
+
+[Service]
+Type=simple
+User=passport-translation
+Group=passport-translation
+WorkingDirectory=/opt/passport-translation
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONPATH=/opt/passport-translation/vendor
+Environment=SUITE_TRANSLATION_CONFIG=/etc/passport-translation/config.json
+ExecStart=/usr/bin/python3 -m gunicorn --config companion/deploy/gunicorn-translation.conf.py "companion.translation.wsgi:create_app()"
+Restart=on-failure
+RestartSec=5
+UMask=0077
+StateDirectory=passport-translation
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/passport-translation
+ReadWritePaths=/var/lib/passport-translation
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=192M
+TasksMax=16
+
+[Install]
+WantedBy=multi-user.target

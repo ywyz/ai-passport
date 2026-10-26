@@ -1,0 +1,9 @@
+# Merge inside the existing HTTPS site before the /suite/v1/* catch-all.
+# Preserve root/file_server and the existing Tasks routes; this is not a full file.
+# Only the one bounded canonical WAV PUT needs the larger body limit.
+handle /suite/v1/translations* {
+    request_body {
+        max_size 320044
+    }
+    reverse_proxy 127.0.0.1:8788
+}

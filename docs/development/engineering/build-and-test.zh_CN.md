@@ -130,6 +130,13 @@ cc -std=c11 -Wall -Wextra -Werror -Imain \
 
 静态门禁还将真实 BSP 和 demo 实现与轻量平台桩编译在一起，故障注入覆盖任务退出交接与停止重试、录音失败、Wi-Fi/BLE 启动回滚、按键分配与 ADC 错误、LVGL 初始化锁与重试、codec 打开/休眠/唤醒恢复。只需主机 C 编译器和 Python，不依赖 ESP-IDF 或已下载的 Managed Components。这些测试不代表真实时序、电气行为或设备兼容性；固件门禁会使用锁定依赖进行编译。
 
+完整静态门禁还使用 Node.js 运行配网页测试，并使用隔离且锁定哈希的 Python 包运行
+[Nextcloud 读取模块](../../assets/passport-nextcloud.zh_CN.md) 测试。
+`tools/test-companion.sh` 首次运行会下载锁定的 wheel，缓存在 `build/tooling/companion/`，
+要求 Python 和 pip，不改变 ESP-IDF 或系统包环境。
+离线执行时，可用 `PIP_NO_INDEX=1` 和 `PIP_FIND_LINKS` 指向准备好的 wheel 目录。
+模拟 CalDAV 测试不能作为真实服务验收。
+
 统一验证入口：
 
 ```bash

@@ -274,13 +274,13 @@ static void audio_cleanup(void) {
         s_data = NULL;
     }
     if (s_rx) {
-        i2s_channel_disable(s_rx);
+        if (!s_sleeping || s_sleep_result!=ESP_OK) i2s_channel_disable(s_rx);
         esp_err_t e = i2s_del_channel(s_rx);
         if (e == ESP_OK) s_rx = NULL;
         else ESP_LOGE(TAG, "I2S RX 回滚失败: %s", esp_err_to_name(e));
     }
     if (s_tx) {
-        i2s_channel_disable(s_tx);
+        if (!s_sleeping || s_sleep_result!=ESP_OK) i2s_channel_disable(s_tx);
         esp_err_t e = i2s_del_channel(s_tx);
         if (e == ESP_OK) s_tx = NULL;
         else ESP_LOGE(TAG, "I2S TX 回滚失败: %s", esp_err_to_name(e));
@@ -482,6 +482,15 @@ fail:
     (void)es8311_force_sleep();
     (void)audio_disable_i2s_channels();
     return e == ESP_OK ? ESP_FAIL : e;
+}
+
+esp_err_t bsp_audio_release(void) {
+    // Owner has stopped PCM before entering; never release an in-flight reader.
+    esp_err_t result = bsp_audio_sleep();
+    audio_cleanup();
+    if (s_tx || s_rx || s_ctrl || s_data || s_codec || s_gpio || s_codec_release_failed)
+        return ESP_FAIL;
+    return result;
 }
 
 esp_err_t bsp_audio_sleep(void) {

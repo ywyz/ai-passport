@@ -15,6 +15,8 @@
 #include "suite_prov_ble.h"
 #include "suite_storage.h"
 #include "suite_weather.h"
+#include "suite_tasks.h"
+#include "suite_net.h"
 
 static const char *TAG = "main";
 
@@ -58,7 +60,9 @@ void app_main(void)
     if (suite_connection_start() != ESP_OK) {
         ESP_LOGW(TAG, "连接管理启动失败,首页将显示离线");
     }
+    (void)suite_net_init();
     (void)suite_weather_start();
+    (void)suite_tasks_start();
 
     if (!suite_app_start(&SUITE_PAGE_HOME)) {
         ESP_LOGE(TAG, "首页进入失败");

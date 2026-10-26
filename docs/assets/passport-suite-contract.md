@@ -4,7 +4,7 @@
 
 ## 1 Contract status and shared limits
 
-Design baseline: 2026-10-05, commit `0b9e4c81ee4421c0bac39ca3561d65a8285acd4a`; status updated 2026-10-19, Asia/Shanghai. Authority and U/D/C/V definitions: [PRD](passport-suite-prd.md); traceability and decisions: [prompts](passport-suite-prompts.md). The [current checkpoint](passport-suite-plan.md#0-current-implementation-and-acceptance) identifies implemented home/weather/browser-provisioning behavior and evidence. SC-07 scene interaction is implemented and partially device-verified; stronger security, signed time, business schemas and cache mechanisms remain proposals unless separately recorded. The six-digit application code must not be represented as the authenticated encrypted SC-02 design. Limits must be reviewed and measured before implementation; changing an agreed limit requires matching both language versions, tests and capability advertisement.
+Design baseline: 2026-10-05, commit `0b9e4c81ee4421c0bac39ca3561d65a8285acd4a`; status updated 2026-10-25, Asia/Shanghai. Authority and U/D/C/V definitions: [PRD](passport-suite-prd.md); traceability and decisions: [prompts](passport-suite-prompts.md). The [current checkpoint](passport-suite-plan.md#0-current-implementation-and-acceptance) identifies implemented home/weather/browser-provisioning, Tasks and translation T1 behavior and evidence. SC-07 scene interaction and SC-08 T1 capture/upload are implemented and partially device-verified; T2 synthesis/playback, stronger security, signed time, business schemas and remaining cache mechanisms stay proposals unless separately recorded. The six-digit application code must not be represented as the authenticated encrypted SC-02 design. Limits must be reviewed and measured before implementation; changing an agreed limit requires matching both language versions, tests and capability advertisement.
 
 All text is valid UTF-8; lengths below count encoded bytes, excluding the terminating NUL (reserve an extra byte in C). Reject malformed UTF-8, duplicate JSON keys, invalid enums, integer overflow, unexpected nesting over 8 levels and unknown required fields. Do not silently truncate authoritative fields, identifiers or ticket codes. UUIDs are lowercase canonical strings; revision integers are uint64 encoded as decimal strings in JSON to avoid browser precision loss. Hashes are SHA-256 lowercase hex. No compressed network payloads in v1; enforce caps while reading, before allocation. Content-Type and length are checked but not trusted alone.
 
@@ -83,6 +83,35 @@ Rendering: no unrelated animation; 216 × 216 square within 240 × 320 rounded p
 
 ## SC-06 Nextcloud CalDAV and offline completion
 
+Implementation profile, 2026-10-20 (approved deployment/flash complete; device
+SA-12 pending): Tasks only after the user removed Deck. The snapshot adds optional
+`task_id` (64-hex SHA-256 of canonical identity) and `completion_allowed`;
+old records stay readable with completion disabled. The wire intent uses
+`task_id` in place of the full `identity`; the server retains that identity.
+`payload_hash` is SHA-256 over sorted compact JSON of the six intent fields,
+excluding `payload_hash` and optional explicit `retry`. Read, admin-selection
+and completion bearer tokens have separate scopes.
+
+The initial queue capacity is eight, below the proposed 64-intent ceiling.
+Committed intents occupy encrypted `taskcfg`/`taskops` NVS, not the snapshot
+slots or Wi-Fi/city NVS; partitions are unchanged. Full/corrupt storage rejects
+admission. Detail OK opens operations, then completion requires a default-cancel
+confirmation. Pending denotes local durability; only the matching server receipt
+denotes remote success. Polling unchanged states does not rewrite Flash.
+Unresolved intents survive Refresh. The implemented cancel behavior is restricted
+to explicit discard of terminal conflict/read-only/missing-resource requests;
+active remote cancellation and reopening remain unimplemented proposals below.
+Lost-response recovery uses an exact persisted submitted-resource hash. Updating
+one completed resource retains the last whole-source fetch timestamp. See the
+[device](passport-device-tasks.md) and [companion](passport-nextcloud.md) records
+for current limits, retry budgets, initial token provisioning and acceptance.
+
+The 2026-10-20 implementation reads one full resource/ETag with CalDAV
+calendar-multiget REPORT before and after conditional PUT: observed edge caching
+served stale authenticated GETs even with no-cache headers. Canonical CRLF
+restoration after XML normalization makes submitted-resource hashes stable.
+No cache-related mismatch permits an unconditional write or silent intent discard.
+
 Implements SU-07/08. Server adapter, not device, speaks CalDAV. Discover authenticated principal/current-user-principal and calendar-home-set, PROPFIND collections and supported-calendar-component-set for VTODO, then calendar-query REPORT and calendar-multiget as needed. Preserve collection href/credential account and ETag. List selection is stored as explicit collection IDs, not display names. [RFC 4791](https://www.rfc-editor.org/rfc/rfc4791) defines discovery/reporting; [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545) defines VTODO/time values. [Nextcloud Tasks](https://github.com/nextcloud/tasks) is the real integration target, whose deployed Nextcloud/Tasks versions must be recorded in Q-07. WebDAV backup files cannot substitute for CalDAV operations.
 
 Model: `{schema:1,account_id,collection_id,href,uid,recurrence_id?,etag,summary,status,percent_complete,completed_at?,due,note,modified_at?,snapshot_revision,downloaded_at}`. Identity is `(account_id,collection_id,uid,recurrence_id)`; href is a locator, UID alone is not globally unique. Recurrence handling is gated by real-version testing; do not complete an entire recurring series through a simplified item. Keep original VCALENDAR/VTODO server-side, preserving unknown properties, alarms, recurrence/subtask relations and folding. Unsupported instances/shared lists are labeled read-only until verified.
@@ -97,6 +126,65 @@ If PUT succeeded but response lost, fetch resource: if target is completed and r
 
 SA-10 uses simulated discovery/ETags/power cuts; SA-11 separately requires actual Nextcloud discovery/list reads; SA-12 separately requires real completion, reboot/offline replay and concurrent webpage edits. A mock success cannot satisfy either real acceptance.
 
+## SC-06.1 Voice-created Tasks
+
+SU-17 / SA-23, added by the user on 2026-10-21; candidate implementation.
+MiMo `mimo-v2.5-asr`, Chinese ASR only, uses the official
+[speech API](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/audio/Speech-Recognition).
+The user selected pay-as-you-go; no real provider call has been made. The
+[published price](https://mimo.mi.com/docs/en-US/price/pay-as-you-go) checked on
+2026-10-21 is CNY 0.5 per audio hour. Credentials stay in a separate private
+server file, never device NVS. Default daily budget is 300 audio seconds, charged
+transactionally before each attempt, including ambiguous/failed attempts; there
+is no automatic paid recognition retry. One WSGI process serializes recognition.
+
+GET `/suite/v1/task-voice` requires the existing independent writer token and
+returns readiness plus the one selected owned collection with DAV bind/write
+privilege. Multiple selected collections require explicit server selection first.
+POST `/suite/v1/task-transcriptions` accepts only canonical PCM WAV: 16 kHz,
+16-bit LE mono, 50 ms minimum, 12 seconds/384,044 bytes maximum including header.
+The exact proxy route gets that larger body cap; other routes retain 4 KiB.
+Audio is uploaded after capture; the provider request uses Base64 WAV and
+`asr_options.language=zh`. Returned title must be nonempty, valid UTF-8, at most
+512 bytes, without control characters. Overlong output fails rather than truncates.
+Recognizing audio never creates a task. Capture/transcription require online
+access and trusted TLS; this increment has no local offline ASR. Offline intent
+tests begin with an already recognized preview and cover connection loss during
+submission, not recording/transcribing a new task while offline.
+Preview preserves the recognized title,
+shows its target collection and requires explicit default-cancel confirmation.
+
+The existing task worker exclusively owns Flash, PCM and voice network work.
+Only the inactive cache slot is invalidated for bounded audio staging; the active
+cache survives capture/cancellation/reboot. A recognizable staging marker is
+written before capture, and cleared last after audio-sector erase. Startup cleans
+interrupted staging. Audio buffers are 512 bytes; the complete clip is never in
+RAM. After PCM returns, `bsp_audio_release()` frees codec/I2S DMA before TLS
+upload. Shared I2C stays available. Cancelled late results cannot restore a page;
+the worker holds no LVGL pointers. PCM stop depends on the BSP/dependency timeout;
+recognition cancellation may wait for an active 10-second socket operation.
+
+POST `/suite/v1/task-creations` receives `{collection_id,operation_id,summary,
+payload_hash,retry?}`; hash is SHA-256 of sorted compact JSON excluding hash/retry.
+Before showing Pending, device NVS `taskcfg/taskvoice` durably commits one CRC
+protected intent. An unresolved creation blocks another capture; it survives
+normal reboot and retries with the same ID/title. Server SQLite admits the intent
+before applying it. Same ID/hash returns its receipt; changed content conflicts.
+Server derives UID and resource name from the operation ID and uses only
+`If-None-Match: *`, accepting HTTP 201. calendar-multiget REPORT verifies the
+exact canonical resource; a lost response recovers that same resource, while a
+different existing resource is never overwritten. Selection/ownership/bind
+privilege are checked again before write. Five transient failures pause, and
+manual retry/reconnect retains the same ID. Only proven terminal rejection can
+be explicitly discarded; success is acknowledged before starting another task.
+Read/admin tokens cannot recognize or create; the writer remains barred from
+snapshot reads and selection. No Wi-Fi/city/token/key partition rewrite is needed.
+
+SA-23 separates pure WAV/cache/journal/parser tests, actual worker cancellation,
+UI confirmation and synthetic provider/CalDAV faults from real microphone,
+MiMo/TLS/billing, Chinese rendering, offline creation replay, live memory/stack
+and successful Nextcloud creation. Code tests do not satisfy those device checks.
+
 ## SC-07 Home scene and weather
 
 Implements SU-09. Home becomes boot default once ST-03 is accepted. Procedural three-body-inspired visualization is illustrative, not an astronomical prediction: three normalized masses/positions, softened inverse-square force, fixed-step integrator at most 20 ms simulated step, at most four integration steps per rendered frame, capped coordinates/speeds, deterministic seed/reset when divergence occurs. Host tests check boundedness/determinism and no NaN. Render at most 10 FPS, pause when hidden; update clock text at 1 Hz, no whole-screen RGB framebuffer. Power/visual smoothness are measured, not claimed from these limits.
@@ -107,17 +195,17 @@ Scene interaction acceptance requires visibly brisk motion and mutual changes of
 
 ## SC-08 Voice translation and fonts
 
-Implements SU-10/11. Format proposal: PCM signed 16-bit little-endian, 16,000 Hz, mono, no WAV header on streaming chunks. 10 s maximum =320,000 bytes; minimum 0.3 s. Click OK starts only after ONLINE, trusted TLS and server session admission; click OK again finalizes. UP/long OK cancel. Direction zh-CN→en or en→zh-CN, no automatic detection. Chunk 1,024 bytes (512 samples/32 ms), eight-chunk RAM ring =8 KiB plus capture/playback scratch ≤4 KiB. Never use the demo's 96 KB whole-clip allocation or keep 320 KB in RAM. Server temporarily spools bounded audio; no device audio Flash history.
+Implements SU-10/11. Approved capture: PCM signed 16-bit little-endian, 16,000 Hz, mono; 10 s maximum = 320,000 PCM bytes, minimum 0.3 s. The clip is stored as one canonical WAV with a 44-byte header, at most 320,044 bytes, in an explicitly owned inactive task-cache Flash slot, never as a whole clip in RAM. The slot marker and the `0x50000` translation span are erased after upload, cancellation, failure or startup recovery; cleanup may extend to the legacy `0x5f000` range, which is not a claim that the whole lifecycle uses only `0x50000`. Click OK starts only after ONLINE, trusted TLS and local service readiness; click OK again finalizes. UP/long OK cancel. Direction zh-CN→en or en→zh-CN, with no automatic detection. The superseded volatile-only ring and chunked-upload model is not current.
 
-POST `/suite/v1/translations` creates job `{operation_id,source_lang,target_lang,format,limit_bytes}`; PUT `/{job}/audio/{sequence}` has ≤8 KiB body and chunk SHA-256, ordered acknowledged offsets; POST `/{job}/finish` contains total bytes/hash. Duplicate same sequence/hash acknowledges same offset; different bytes conflicts. Stop upload on ring overflow/backpressure lasting >250 ms: abort whole job with BUSY, do not drop samples and pretend full recording. Capture must drain PCM continuously within budget; if HTTP batching cannot keep up, reduce approved recording ceiling or review compressed codec, not unbounded buffers. Server capture/job absolute lifetime 120 s; partial uploads never trigger billed recognition automatically. Cancel DELETE `/{job}` is idempotent, but already completed provider billing is not promised reversible.
+POST `/suite/v1/translations` admits `{schema,operation_id,source_lang,target_lang,format,audio_sha256,audio_bytes}`, and a durable admission precedes the 202 response. `PUT /suite/v1/translations/{job}/audio` carries exactly one canonical WAV (`Content-Type: audio/wav`, required `Content-Length`) of at most 320,044 bytes with a matching full-file SHA-256; a mismatched length, envelope or hash is rejected before any provider claim. `GET /{job}` polls state/result and idempotent `DELETE /{job}` cancels. T1 has no per-chunk sequence or `finish` route. A repeated matching upload must not repeat ASR, and any ambiguous POST/PUT becomes `UNKNOWN` with no automatic paid retry. Job identity and generation must match the admission. Cancellation does not promise reversal of provider billing already incurred.
 
-State READY → RECORDING/UPLOADING → FINALIZING → RECOGNIZING → TRANSLATING → SYNTHESIZING → RESULT → PLAYING, or CANCELLED/ERROR → READY. UP/long OK cancel in every busy state, generation invalidates late results. Deadlines: upload connect 10 s, idle 5 s, recording 10 s; recognition 20 s, translation 15 s, synthesis 20 s, post-record pipeline total 60 s. Return monotonic progress state without secrets. Retry only status/idempotent upload within same job; no automatic new billed job after ambiguous finish. Offline disallows new capture; mid-capture disconnect cancels with clear error, no silent offline translation claim.
+State READY → RECORDING/UPLOADING → FINALIZING → RECOGNIZING → TRANSLATING → RESULT, or CANCELLED/ERROR → READY; SYNTHESIZING and PLAYING are T2 proposals. UP/long OK cancel in every busy state, and generation invalidates late results. Deadlines: upload connect 10 s, idle 5 s, recording 10 s; recognition 20 s, translation 15 s, post-record pipeline total 60 s; synthesis 20 s remains a T2 proposal. Return monotonic progress state without secrets. Retry only status/idempotent upload within the same job; no automatic new billed job after an ambiguous upload. Offline disallows new capture; mid-capture disconnect cancels with a clear error, and no silent offline translation is claimed.
 
 Result `{job_id,source_text,target_text,source_lang,target_lang,provider_states,audio?,expires_at}`. Each text ≤2,048 bytes and ≤512 Unicode scalar values, validated at character boundary. If exceeded return TOO_LARGE and preserve any clearly labeled valid source; do not invent summary as a translation. Source and translation have separate labeled scroll sections. Synthesis failure may leave usable text with Voice unavailable. Playback PCM 16 kHz/16-bit/mono, ≤15 s/480,000 bytes streamed with same bounded ring; OK/UP/long OK stops via audio owner, stop target ≤2 s subject to measured BSP latency. Audio URL is authorized and expires in 5 min, not a public reusable link.
 
-Adapter interface Q-09: recognize bounded audio→source text; translate explicit pair→target text; synthesize text→bounded audio. Select provider/API version, region, streaming support, limits, billing cap, cancellation semantics, data retention and licensing before real adapter work. Mock adapters return `provider_mode=mock`; SA-14 tests mocks/limits, SA-15 requires real Chinese→English and English→Chinese speech/text/playback. Never call a fixture real service acceptance.
+Adapter interface Q-09: recognize bounded audio→source text; translate explicit pair→target text; synthesize text→bounded audio. T1 uses the approved MiMo `mimo-v2.5-asr` plus `mimo-v2.6-flash` adapter; DeepSeek is rejected as a production provider. Mock adapters return `provider_mode=mock` and are never a silent fallback from a real failure. SA-14 tests mocks/limits. SA-15 requires real Chinese→English and English→Chinese speech/text/playback and remains incomplete: the real ASR/MT path exists, T2 playback does not. Never call a fixture real service acceptance.
 
-Retention proposal: device audio only volatile, erased/freed on finish/cancel/error; text only current page session, wiped on exit/reboot, no history. Server raw/synthesized temporary audio deleted on cancellation or successful retrieval, hard TTL 5 min and orphan cleanup on restart; source/translation payloads excluded from request logs/backups. Provider deletion/retention cannot be assumed: Q-09 must approve policy or block actual user audio. Keep anonymous duration/error metrics only if separately approved.
+Retention: the approved temporary plaintext WAV is erased after its single upload, and also on cancel, failure or startup recovery. Text is RAM-only for the current page session with a 120-second TTL, wiped on exit or reboot, with no history. Server raw/synthesized temporary audio is deleted on cancellation or successful retrieval, queued audio expires at 300 seconds, and orphan cleanup runs on restart; source/translation payloads stay out of request logs and backups. Provider deletion/retention cannot be assumed: the user accepted the disclosed lack of a fixed TTL and unconfirmed audio-training treatment for the selected plan, and no account-region guarantee is claimed. Keep anonymous duration/error metrics only if separately approved.
 
 Chinese font plan: licensed pinned CJK font subset for all static UI plus declared dynamic inventory (candidate ASCII/punctuation/CJK Unified Ideographs U+4E00–U+9FFF, subject to Flash fit Q-05); 16 px body and 20 px headings. Explicitly select fonts on labels, menus, popups and states. Server reports unsupported code points; show an intentional Unsupported character indication preserving original in website, never silently erase characters or disable missing-glyph placeholders. Validate per-code-point coverage, known-missing negative cases, UTF-8 safe wrapping/truncation, converter/license and [font integration](../development/engineering/lvgl-chinese-fonts.md). Static subset alone does not cover arbitrary names/translations. If full declared inventory does not fit, narrow it visibly or review another bounded font delivery design before claiming support. SA-16 separately observes every page, long content and mixed Chinese/English on hardware.
 

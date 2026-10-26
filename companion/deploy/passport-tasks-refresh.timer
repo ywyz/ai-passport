@@ -1,0 +1,11 @@
+[Unit]
+Description=AI Passport periodic CalDAV read timer
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=5min
+AccuracySec=1s
+Unit=passport-tasks-refresh.service
+
+[Install]
+WantedBy=timers.target

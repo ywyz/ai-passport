@@ -32,6 +32,126 @@ run_static_checks() {
         tests/test_demo_navigation.c main/demo_navigation.c \
         -o "${test_dir}/test_demo_navigation"
     "${test_dir}/test_demo_navigation"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -O2 -Imain \
+        tests/test_suite_tasks_core.c main/suite_tasks_core.c main/suite_task_ops.c \
+        -o "${test_dir}/test_suite_tasks_core"
+    "${test_dir}/test_suite_tasks_core"
+    for opt in default o2; do
+        opt_flags=""
+        if [[ "${opt}" == "o2" ]]; then
+            opt_flags="-O2"
+        fi
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} -Imain \
+            tests/test_suite_translation_core.c main/suite_translation_core.c \
+            -o "${test_dir}/test_suite_translation_core_${opt}"
+        "${test_dir}/test_suite_translation_core_${opt}"
+    done
+    # Real translation worker/core with real host threads. The provider boundary,
+    # task creation and time are external stubs; cancellation, late results and
+    # worker cleanup use the changed implementation itself, not a second model.
+    for opt in default o2; do
+        opt_flags=""
+        if [[ "${opt}" == "o2" ]]; then
+            opt_flags="-O2"
+        fi
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} -pthread \
+            -DSUITE_TRANSLATION_TEST -Itests/translation_stubs -Imain \
+            -Icomponents/bsp/include \
+            tests/test_suite_translation_worker.c main/suite_translation_core.c \
+            main/suite_translation_mock.c main/suite_translation_protocol.c \
+            tests/translation_stubs/translation_real_stubs.c \
+            -o "${test_dir}/test_suite_translation_worker_${opt}"
+        "${test_dir}/test_suite_translation_worker_${opt}"
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} -pthread \
+            -DSUITE_TRANSLATION_TEST -Itests/translation_stubs -Imain \
+            -Icomponents/bsp/include \
+            tests/test_suite_translation_real_worker.c main/suite_translation.c \
+            main/suite_translation_core.c main/suite_translation_mock.c \
+            main/suite_translation_protocol.c \
+            tests/translation_stubs/translation_real_stubs.c \
+            -o "${test_dir}/test_suite_translation_real_worker_${opt}"
+        "${test_dir}/test_suite_translation_real_worker_${opt}"
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} \
+            -Itests/tasks_ui_stubs -Itests/translation_stubs -Imain \
+            -Icomponents/bsp/include \
+            tests/test_suite_translation_ui.c \
+            -o "${test_dir}/test_suite_translation_ui_${opt}"
+        "${test_dir}/test_suite_translation_ui_${opt}"
+    done
+    # Shared scratch/config/USB prerequisites (owned by the shared-device
+    # session; registered here without changing their sources).
+    for opt in default o2; do
+        opt_flags=""
+        if [[ "${opt}" == "o2" ]]; then
+            opt_flags="-O2"
+        fi
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} -pthread \
+            -DSUITE_AUDIO_JOB_TEST -Itests/tasks_stubs -Itests/weather_stubs \
+            -Itests/ble_stubs -Imain tests/test_suite_audio_job.c \
+            main/suite_audio_job.c main/suite_tasks_core.c main/suite_task_voice.c \
+            main/suite_task_ops.c tests/ble_stubs/cJSON.c -lm \
+            -o "${test_dir}/test_suite_audio_job_${opt}"
+        "${test_dir}/test_suite_audio_job_${opt}"
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} \
+            -Itests/tasks_stubs -Itests/weather_stubs -Imain \
+            tests/test_suite_translation_config.c main/suite_translation_config.c \
+            main/suite_tasks_core.c main/suite_task_ops.c \
+            -o "${test_dir}/test_suite_translation_config_${opt}"
+        "${test_dir}/test_suite_translation_config_${opt}"
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} \
+            -Itests/tasks_stubs -Itests/weather_stubs -Itests/ble_stubs -Imain \
+            tests/test_suite_translation_usb_proto.c main/suite_translation_usb_proto.c \
+            main/suite_translation_config.c main/suite_tasks_core.c main/suite_task_ops.c \
+            tests/ble_stubs/cJSON.c -lm \
+            -o "${test_dir}/test_suite_translation_usb_proto_${opt}"
+        "${test_dir}/test_suite_translation_usb_proto_${opt}"
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} \
+            -Itests/translation_usb_stubs -Itests/tasks_stubs -Itests/weather_stubs -Imain \
+            tests/test_suite_translation_usb_window.c main/suite_translation_usb.c \
+            -o "${test_dir}/test_suite_translation_usb_window_${opt}"
+        "${test_dir}/test_suite_translation_usb_window_${opt}"
+    done
+    for opt in default o2; do
+        opt_flags=""
+        if [[ "${opt}" == "o2" ]]; then
+            opt_flags="-O2"
+        fi
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} -Imain \
+            tests/test_suite_translation_protocol.c main/suite_translation_protocol.c \
+            -o "${test_dir}/test_suite_translation_protocol_${opt}"
+        "${test_dir}/test_suite_translation_protocol_${opt}"
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror ${opt_flags} \
+            -Itests/translation_http_stubs -Imain \
+            -include tests/translation_http_stubs/suite_transport_test_io.h \
+            tests/test_suite_translation_http.c main/suite_translation_http.c \
+            main/suite_translation_protocol.c \
+            -o "${test_dir}/test_suite_translation_http_${opt}"
+        "${test_dir}/test_suite_translation_http_${opt}"
+    done
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_translation_device_config.py
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -O2 -Imain \
+        tests/test_suite_task_ops.c main/suite_task_ops.c main/suite_tasks_core.c \
+        -o "${test_dir}/test_suite_task_ops"
+    "${test_dir}/test_suite_task_ops"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -O2 -Imain -Itests/ble_stubs \
+        tests/test_suite_task_voice.c main/suite_task_voice.c main/suite_tasks_core.c main/suite_task_ops.c \
+        tests/ble_stubs/cJSON.c -lm -o "${test_dir}/test_suite_task_voice"
+    "${test_dir}/test_suite_task_voice"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -O2 \
+        -Itests/tasks_ui_stubs -Itests/weather_stubs -Imain \
+        tests/test_suite_tasks_ui.c main/suite_tasks_nav.c main/suite_clock.c \
+        -o "${test_dir}/test_suite_tasks_ui"
+    "${test_dir}/test_suite_tasks_ui"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -O2 \
+        -ffunction-sections -fdata-sections -Itests/tasks_stubs -Itests/weather_stubs -Imain -Itests/ble_stubs \
+        tests/test_suite_tasks_runtime.c main/suite_tasks_core.c main/suite_task_ops.c main/suite_clock.c main/suite_task_voice.c tests/ble_stubs/cJSON.c -lm \
+        -Wl,--gc-sections -o "${test_dir}/test_suite_tasks_runtime"
+    "${test_dir}/test_suite_tasks_runtime"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -O2 \
+        -ffunction-sections -fdata-sections -Itests/tasks_stubs -Itests/weather_stubs -Imain \
+        tests/test_suite_storage_preservation.c -Wl,--gc-sections \
+        -o "${test_dir}/test_suite_storage_preservation"
+    "${test_dir}/test_suite_storage_preservation"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src \
         tests/test_bsp_display_rounding.c components/bsp/src/bsp_display_rounding.c \
         -o "${test_dir}/test_bsp_display_rounding"
@@ -126,9 +246,11 @@ run_static_checks() {
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_deep_sleep_contract.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_check_repo.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_suite_font_charset.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_task_device_config.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_verify_firmware.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_archive_firmware.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_install_passport_skills.py
+    bash tools/test-companion.sh
     rm -rf "${test_dir}"
     echo "Host tests: PASS"
 }

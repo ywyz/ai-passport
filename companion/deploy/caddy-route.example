@@ -1,0 +1,15 @@
+# Merge inside the existing HTTPS site after reviewing the live Caddyfile.
+# Preserve its root/file_server and existing behavior; this is not a full file.
+# This exact route alone accepts the bounded 12-second PCM WAV upload.
+handle /suite/v1/task-transcriptions {
+    request_body {
+        max_size 384044
+    }
+    reverse_proxy 127.0.0.1:8787
+}
+handle /suite/v1/* {
+    request_body {
+        max_size 4KB
+    }
+    reverse_proxy 127.0.0.1:8787
+}

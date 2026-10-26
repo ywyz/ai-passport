@@ -41,6 +41,22 @@
 | --- | --- | --- |
 | 开放固件与可复用示例，为你的创意留出发挥空间。 | 从一个简单想法出发，跟随清晰指南把它变成现实。 | 打造随身伙伴、小工具、游戏，或任何你能想到的东西。 |
 
+## 当前项目状态
+
+本仓库的应用开发记录见 [docs/assets](assets/README.zh_CN.md)；
+[suite-plan 第 0 节](assets/passport-suite-plan.zh_CN.md#0-当前实现与验收)是唯一的当前权威。
+
+- **当前源码：** 本机原生检出，detached 于 `21c5110`，带有未提交应用修改。Windows 侧有文档
+  镜像但应用代码已过期，不得作为源码、构建输入或刷写候选；其代码不能证明原生功能不存在，
+  但其自身的刷写日志对其所描述的产物仍然有效。
+- **已实现并部署：** Nextcloud 待办读取、完成、离线缓存与语音新建；翻译 T1（MiMo 语音识别
+  与文本翻译）。翻译 T2/TTS 尚未实现；OTP 与票夹仍为占位页。
+- **当前阻塞：** 2026-10-25 误刷后设备上是旧构建，其启动器只有翻译占位页。OC-11 最后一次
+  真机尝试在采集前停于服务就绪检查。应先恢复获准产物（同时核对其既有授权），再继续该就绪
+  诊断。
+- **工作流：** OpenCode Go `opencode-go/deepseek-v4.1-flash` 负责编码、修复、测试和构建；
+  Codex 负责统筹、独立复核并指导真机验收。
+
 ## 找到你的起点
 
 | 我想要…… | 从这里开始 |
@@ -147,7 +163,7 @@ git switch -c feature/my-passport-app
 
 | 能力 | 已确认实现 | 应用接口 | 必须遵守的边界 |
 | --- | --- | --- | --- |
-| 显示 | ST7789P3，240 × 320，竖屏 RGB565，SPI2 40 MHz；LEDC 背光 | `bsp_display_*`、`bsp_lvgl_*` | ESP32-C3 无 PSRAM；当前为小型单 DMA 缓冲；BSP 未暴露 LCD MISO、触摸或 TE 接口 |
+| 显示 | ST7789P3，240 × 320，竖屏 RGB565，SPI2 80 MHz；LEDC 背光 | `bsp_display_*`、`bsp_lvgl_*` | ESP32-C3 无 PSRAM；当前为小型单 DMA 缓冲；BSP 未暴露 LCD MISO、触摸或 TE 接口 |
 | 输入 | `UP` / `DOWN` / `OK` 三键，共用 GPIO0 的 ADC 电阻分压 | `bsp_button_init()`、`bsp_button_read_mv()` | 回调运行在 button 组件任务中，不能阻塞；不能再创建第二个 ADC1 unit |
 | 音频 | ES8311，I2S0 全双工 PCM，支持播放、麦克风录音及软件休眠/恢复 | `bsp_audio_*` | PCM 读写为阻塞调用，应放工作任务；codec 休眠前必须停止 PCM I/O；格式切换必须保留 BSP 内的 close/open 流程 |
 | 电池 | CW2017 的 SOC 与电压读取 | `bsp_battery_*` | 是可缺省能力；读数精度取决于电芯与 profile，不能等同于已标定结果 |
